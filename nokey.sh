@@ -17,6 +17,9 @@ readonly GITHUB_XRAY_OFFICIAL_SCRIPT="install-release.sh"
 
 mldsa_enabled=0
 current_hostname=$(hostname)
+caddy_mode=0
+port_from_flag=0
+reality_dest_port=443  # default port for REALITY destination (not the inbound port)
 
 # Color definitions
 readonly red='\e[91m'
@@ -116,13 +119,239 @@ remove_alias() {
 }
 
 detect_network_interfaces() {
-    
+
     Public_IPv4=$(curl -4s -m 2 https://www.cloudflare.com/cdn-cgi/trace | awk -F= '/^ip=/{print $2}')
     Public_IPv6=$(curl -6s -m 2 https://www.cloudflare.com/cdn-cgi/trace | awk -F= '/^ip=/{print $2}')
-    
+
     [[ -n "$Public_IPv4" ]] && IPv4="$Public_IPv4"
     [[ -n "$Public_IPv6" ]] && IPv6="$Public_IPv6"
     echo "Detected interface / 找到网卡: $Public_IPv4 $Public_IPv6" >> "$LOG_FILE"
+}
+
+detect_caddy_config() {
+    task_start "检测 Caddy 服务 / Detecting Caddy Service"
+
+    # Check if caddy is installed
+    if ! command -v caddy > /dev/null 2>&1; then
+        task_fail
+        error "Caddy is not installed. Please install Caddy first or run without --caddy flag."
+        exit 1
+    fi
+
+    # Check if caddy service is running (support both systemd and OpenRC)
+    local caddy_running=0
+    if command -v systemctl > /dev/null 2>&1; then
+        if systemctl is-active --quiet caddy; then
+            caddy_running=1
+        fi
+    elif command -v rc-service > /dev/null 2>&1; then
+        if rc-service caddy status > /dev/null 2>&1; then
+            caddy_running=1
+        fi
+    fi
+
+    # Fallback: check for caddy process if service check didn't confirm
+    if [[ $caddy_running -eq 0 ]] && command -v pgrep > /dev/null 2>&1; then
+        if pgrep -x "caddy" > /dev/null; then
+            caddy_running=1
+        fi
+    fi
+
+    if [[ $caddy_running -eq 0 ]]; then
+        task_fail
+        error "Caddy is installed but not running. Please start Caddy service or run without --caddy flag."
+        exit 1
+    fi
+
+    # Check if Caddyfile exists
+    local caddyfile_paths=("/etc/caddy/Caddyfile" "/etc/caddyfile" "/usr/local/etc/caddy/Caddyfile")
+    local caddyfile=""
+    for path in "${caddyfile_paths[@]}"; do
+        if [[ -f "$path" ]]; then
+            caddyfile="$path"
+            break
+        fi
+    done
+
+    if [[ -z "$caddyfile" ]]; then
+        task_fail
+        error "Caddyfile not found in standard locations. Please ensure Caddyfile exists in /etc/caddy/ or /etc/."
+        exit 1
+    fi
+
+    # Parse Caddyfile to extract the first site block address (domain[:port] or [ipv6]:port)
+    # Skip global options, comments, empty lines, and imports
+    local domain_line=""
+    while IFS= read -r line; do
+        # Skip comments and empty lines
+        [[ -z "$line" ]] && continue
+        [[ "$line" =~ ^# ]] && continue
+
+        # Trim whitespace
+        line="$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        [[ -z "$line" ]] && continue
+
+        # Skip structural characters and directives
+        [[ "$line" == "{" || "$line" == "}" ]] && continue
+        [[ "$line" =~ ^@ ]] && continue  # named matchers
+        [[ "$line" =~ ^\{ ]] && continue  # global options start with {
+        [[ "$line" =~ ^import ]] && continue
+
+        # Remove trailing brace if present (e.g., "example.com:8443 {")
+        local address_part="${line%%{*}"
+        address_part="$(echo "$address_part" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        [[ -z "$address_part" ]] && continue
+
+        # Match patterns:
+        # - example.com
+        # - example.com:8443
+        # - [2001:db8::1]:8443
+        # - example.com:    (edge case: port without number - should reject)
+        if [[ "$address_part" =~ ^\[([a-fA-F0-9:]+)\](:[0-9]+)?$ ]]; then
+            # IPv6 in brackets, optional port
+            extracted_domain="[$BASH_REMATCH[1]]"
+            extracted_port="${BASH_REMATCH[2]:-443}"  # default 443 if no port
+            extracted_port="${extracted_port#:}"  # remove leading colon
+        elif [[ "$address_part" =~ ^([a-zA-Z0-9.*-]+)(:[0-9]+)?$ ]]; then
+            # Domain name (including wildcards like *.example.com) and optional port
+            extracted_domain="${BASH_REMATCH[1]}"
+            extracted_port="${BASH_REMATCH[2]:-443}"
+            extracted_port="${extracted_port#:}"
+        else
+            # Not a valid site address - could be a directive like `reverse_proxy`, `file_server`, etc.
+            # Continue to next line to find the actual site address
+            continue
+        fi
+
+        # Validate domain is not empty and doesn't look like a directive
+        if [[ -n "$extracted_domain" ]]; then
+            domain_line="$line"
+            break
+        fi
+    done < "$caddyfile"
+
+    if [[ -z "$domain_line" ]] || [[ -z "$extracted_domain" ]]; then
+        task_fail
+        error "Could not parse domain from Caddyfile. Ensure the first non-comment line is a valid address like 'example.com' or '[2001:db8::1]:8443'."
+        exit 1
+    fi
+
+    # If user already specified a domain via --domain, respect it but inform about caddy override
+    if [[ -n "$domain" ]]; then
+        info "User specified domain '$domain' via --domain flag. Using it (Caddyfile domain will be ignored)."
+    else
+        domain="$extracted_domain"
+    fi
+
+    # Check if domain is a wildcard (starts with "*.")
+    if [[ "${domain:0:2}" == "*." ]]; then
+        # If not running in an interactive terminal, fail with instructions
+        if [[ ! -t 0 ]]; then
+            error "Wildcard domain '$domain' detected and --domain not specified. Please provide a specific domain using --domain flag or run in interactive mode."
+            exit 1
+        fi
+
+        # Interactive prompt
+        warn "Wildcard domain '$domain' is not supported by REALITY. REALITY requires explicit domain names for SNI matching."
+        while true; do
+            read -r -p "Please enter a specific domain (e.g., example.com): " user_domain
+            # Check for empty input
+            if [[ -z "$user_domain" ]]; then
+                warn "Domain cannot be empty. Please try again."
+                continue
+            fi
+            # Check for wildcard characters in user input
+            if [[ "$user_domain" == *[*]* ]]; then
+                warn "Invalid domain: wildcard characters (*) are not allowed. Please enter a concrete domain name without '*'."
+                continue
+            fi
+            # Accept the domain
+            domain="$user_domain"
+            info "Using domain: ${domain}"
+            break
+        done
+    fi
+
+    # If user already specified a port via --port, respect it
+    if [[ -z "$port" ]]; then
+        # When using Caddy, default Xray inbound to 443 (if not user-specified)
+        port=443
+    else
+        info "User specified port '$port' via --port flag. Using it (Xray will bind to this port)."
+    fi
+
+    # When using Caddy, REALITY destination port is hardcoded to 8443
+    reality_dest_port=8443
+
+    # Check if the chosen inbound port is available or used by Xray
+    local port_in_use=0
+    if command -v ss >/dev/null 2>&1; then
+        if ss -ltn "sport = :$port" 2>/dev/null | grep -q .; then
+            port_in_use=1
+        fi
+    elif command -v netstat >/dev/null 2>&1; then
+        if netstat -ltn 2>/dev/null | grep -qE "[:]$port($| )"; then
+            port_in_use=1
+        fi
+    else
+        (echo > /dev/tcp/127.0.0.1/$port) >/dev/null 2>&1
+        if [[ $? -eq 0 ]]; then
+            port_in_use=1
+        fi
+    fi
+
+    if [[ $port_in_use -eq 1 ]]; then
+        # Check if it's Xray
+        local is_xray=0
+        if command -v ss >/dev/null 2>&1; then
+            if ss -ltnp "sport = :$port" 2>/dev/null | grep -q xray; then
+                is_xray=1
+            fi
+        elif command -v netstat >/dev/null 2>&1; then
+            if netstat -ltnp 2>/dev/null | grep -qE "[:.]$port($| )" | grep -q xray; then
+                is_xray=1
+            fi
+        else
+            # Without ss/netstat we can't definitively identify the process.
+            # If Xray service is active, assume it's safe.
+            if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
+                if rc-service "$SERVICE_NAME_ALPINE" status >/dev/null 2>&1; then
+                    is_xray=1
+                fi
+            else
+                if systemctl is-active --quiet "$SERVICE_NAME"; then
+                    is_xray=1
+                fi
+            fi
+        fi
+
+        if [[ $is_xray -eq 1 ]]; then
+            info "Port $port is already in use by Xray. Will restart service after configuration."
+        else
+            task_fail
+            # Identify which process is using the port
+            local process_info=""
+            if command -v ss >/dev/null 2>&1; then
+                process_info=$(ss -ltnp "sport = :$port" 2>/dev/null | head -n 2)
+            elif command -v netstat >/dev/null 2>&1; then
+                process_info=$(netstat -ltnp 2>/dev/null | grep -E "[:.]$port($| )" | head -n 1)
+            fi
+            error "Port $port is occupied by another service. With --caddy flag, Xray must bind to port $port (default 443) to work with Caddy."
+            if [[ -n "$process_info" ]]; then
+                error "Process using port $port:"
+                error "$process_info"
+            fi
+            error "Please stop the above service to free port $port, or reconfigure Caddy to use a different port."
+            exit 1
+        fi
+    fi
+
+    task_done_with_info "domain=$domain, xray_port=$port, reality_dest_port=$reality_dest_port"
+
+    info "Caddy configuration detected:"
+    info "  - Domain/SNI: $cyan$domain$none"
+    info "  - Xray inbound port: $cyan$port$none"
+    info "  - REALITY destination: $cyan${domain}:${reality_dest_port}$none"
 }
 
 generate_uuid() {
@@ -139,7 +368,7 @@ install_dependencies() {
     task_start "开始准备工作 / Starting Preparation"
 
     #todo: "qrencode" should be a flag controlled feature
-    local tools=("curl")
+    local tools=("curl" "netstat")
 
     declare -A os_package_command=(
         [apt]="apt install -y"
@@ -173,7 +402,14 @@ install_dependencies() {
     for tool in "${tools[@]}"; do
         if ! command -v "$tool" > /dev/null 2>&1; then
             info "$tool is missing, attempting to install."
-            eval "$install_cmd" "$tool"  >> "$LOG_FILE" 2>&1
+            # Map binary names to package names if different
+            local package_name="$tool"
+            case "$tool" in
+                netstat)
+                    package_name="net-tools"
+                    ;;
+            esac
+            eval "$install_cmd" "$package_name"  >> "$LOG_FILE" 2>&1
             if ! command -v "$tool" > /dev/null 2>&1; then
                 task_fail
                 error "Failed to install '$tool'. Please install it manually and re-run the script."
@@ -303,6 +539,7 @@ parse_args() {
           ;;
         --port=*)
           port="${arg#*=}"
+          port_from_flag=1
           ;;
         --domain=*)
           domain="${arg#*=}"
@@ -318,6 +555,9 @@ parse_args() {
           ;;
         --mldsa)
           mldsa_enabled=1
+          ;;
+        --caddy)
+          caddy_mode=1
           ;;
         --shortid=*)
           shortid="${arg#*=}"
@@ -341,6 +581,11 @@ parse_args() {
 
 
 initialize_variables() {
+    # If caddy mode is enabled, detect and set domain/port from Caddyfile
+    if [[ $caddy_mode -eq 1 ]]; then
+        detect_caddy_config
+    fi
+
     task_start "监测IP / Detect IP"
     if [[ -z $netstack ]]; then
       if [[ -n "$IPv4" ]]; then
@@ -404,8 +649,8 @@ generate_crypto() {
       private_key=$(echo "$keys" | awk '/PrivateKey:/ {print $2}')
       task_done_with_info "${private_key}"
       task_start "生成一个公钥 / Generate Public Key"
-      public_key=$(echo "$keys" | awk '/Password:/ {print $2}')
-      task_done_with_info "${public_key}" 
+      public_key=$(echo "$keys" | awk -F': ' '/Password.*PublicKey/ || /Password:/ {print $2}')
+      task_done_with_info "${public_key}"
     fi
 
     task_start "生成一个shortid / Generate shortid"
@@ -470,7 +715,7 @@ build_xray_config() {
               "security": "reality",
               "realitySettings": {
                 "show": false,
-                "dest": "${domain}:443",    // ***
+                "dest": "${domain}:${reality_dest_port}",    // ***
                 "xver": 0,
                 "serverNames": ["${domain}"],    // ***
                 "privateKey": "${private_key}",    // ***私钥
@@ -585,11 +830,12 @@ show_help() {
   echo "选项: / Options"
   echo "  --netstack=4|6     使用IPv4或IPv6 (默认: 自动检测) / Use IPv4 or IPv6"
   echo "  --port=NUMBER      设置端口号 (默认: 随机) / Set port number"
-  echo "  --domain=DOMAIN    设置SNI域名 (默认: learn.microsoft.com) / Set SNI domain"
+  echo "  --domain=DOMAIN    设置SNI域名 (默认: itunes.apple.com) / Set SNI domain"
   echo "  --uuid=STRING      设置UUID (默认: 自动生成) / Set UUID"
   echo "  --mldsa            启用ML-DSA签名生成 (默认: 关闭) / Enable ML-DSA signature generation (default: off)"
   echo "  --mldsa65Seed=STRING  设置ML-DSA-65私钥 (默认: 自动生成) / Set ML-DSA-65 private key"
   echo "  --mldsa65Verify=STRING  设置ML-DSA-65公钥 (默认: 自动生成) / Set ML-DSA-65 public key"
+  echo "  --caddy            从运行的Caddy服务自动检测域名和端口 / Detect domain and port from Caddy service"
   echo "  --force            强制重装 / Force Reinstall"
   echo "  --remove           卸载Xray和NoKey / Uninstall Xray and NoKey"
   echo "  --help             显示此帮助信息 / Show this help message"
