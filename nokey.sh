@@ -329,17 +329,23 @@ detect_caddy_config() {
             info "Port $port is already in use by Xray. Will restart service after configuration."
         else
             task_fail
-            # Identify which process is using the port
+            # Identify which process is using the port (try ss, netstat, lsof, pgrep)
             local process_info=""
             if command -v ss >/dev/null 2>&1; then
                 process_info=$(ss -ltnp "sport = :$port" 2>/dev/null | head -n 2)
             elif command -v netstat >/dev/null 2>&1; then
                 process_info=$(netstat -ltnp 2>/dev/null | grep -E "[:.]$port($| )" | head -n 1)
+            elif command -v lsof >/dev/null 2>&1; then
+                process_info=$(lsof -i :$port 2>/dev/null | head -n 2)
+            elif command -v pgrep >/dev/null 2>&1; then
+                process_info=$(pgrep -fl "$port" | head -n 1)
             fi
             error "Port $port is occupied by another service. With --caddy flag, Xray must bind to port $port (default 443) to work with Caddy."
             if [[ -n "$process_info" ]]; then
                 error "Process using port $port:"
                 error "$process_info"
+            else
+                error "No process information could be retrieved. Is another service using port 443?"
             fi
             error "Please stop the above service to free port $port, or reconfigure Caddy to use a different port."
             exit 1
