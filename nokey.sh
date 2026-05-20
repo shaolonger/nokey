@@ -2,7 +2,7 @@
 
 # Constants and Configuration
 
-readonly SCRIPT_VERSION="2026.7" 
+readonly SCRIPT_VERSION="2026.8" 
 readonly LOG_FILE="nokey.log"
 readonly URL_FILE="nokey.url"
 readonly DEFAULT_DOMAIN="www.amd.com"
@@ -993,12 +993,11 @@ download_official_script() {
         info "\nAlpine OS detected"        
     fi    
 
-    curl -sL "$url" -o "$GITHUB_XRAY_OFFICIAL_SCRIPT" >> "$LOG_FILE" 2>&1
-    if [[ -f "$GITHUB_XRAY_OFFICIAL_SCRIPT" ]]; then
+    if curl -fsSL "$url" -o "$GITHUB_XRAY_OFFICIAL_SCRIPT" >> "$LOG_FILE" 2>&1 && [[ -s "$GITHUB_XRAY_OFFICIAL_SCRIPT" ]]; then
         task_done
     else
         task_fail
-        error "无法下载官方脚本，检查互联网链接，详细查看$LOG_FILE"
+        error "无法下载官方脚本或下载内容为空，检查互联网链接，详细查看$LOG_FILE"
         exit 1
     fi
 
@@ -1039,4 +1038,3 @@ main() {
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     main "$@"
 fi
-
