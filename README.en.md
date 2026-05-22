@@ -1,6 +1,6 @@
 # 📦 [项目说明](README.md) | [Project](README.en.md) | [اطلاعات پروژه](README.fa.md)
 
-> Repository: https://github.com/livingfree2023/xray-vless-reality-nokey
+> Repository: https://github.com/livingfree2023/nokey
 
 Many popular "one-click" scripts nowadays have become ~~bloated~~ feature-rich, ~~lost their original purpose~~ very advanced.
 
@@ -23,7 +23,7 @@ Run a single command, sit back, and wait. No chatter, no fuss—super fast. Read
 3. Generates UUID/KeyPair using official commands  
 4. Auto-detects a random free port  
 5. Adapts across multiple Linux distributions  
-6. Uses official Xray-core installer  
+6. Downloads prebuilt Xray binaries directly (amd64/arm64)  
 7. Accepts parameters for protocol stack, UUID, SNI, port  
 8. Shows help with `--help`  
 9. Outputs only minimal steps—detailed logs saved to a file  
@@ -35,15 +35,23 @@ Run a single command, sit back, and wait. No chatter, no fuss—super fast. Read
 # 🧑‍🍳 How to Use (as root)
 
 ```bash
-bash -c "$(curl -sL https://raw.githubusercontent.com/livingfree2023/xray-vless-reality-nokey/refs/heads/main/nokey.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)"
 ```
 
 ---
 
-# 🧹 Uninstalling Xray-core (this script leaves no trace, so uninstalling isn’t really necessary)
+# 🔍 Dry-run (preview without changing system)
 
 ```bash
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ remove --purge
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)" @ --dry-run
+```
+
+---
+
+# 🧹 Uninstall
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)" @ --remove
 ```
 
 ---

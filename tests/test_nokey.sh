@@ -49,4 +49,37 @@ extracted_public="$(extract_public_key_from_x25519_output "$keys_sample_spaced")
 [[ "$extracted_public" == "PUBLIC_SPACED" ]] || fail "public key extraction should support 'Public key:' format"
 pass "spaced label key extraction"
 
+# Test 5: architecture mapping helper
+[[ "$(resolve_arch_dir x86_64)" == "binary_amd64" ]] || fail "x86_64 should map to binary_amd64"
+[[ "$(resolve_arch_dir amd64)" == "binary_amd64" ]] || fail "amd64 should map to binary_amd64"
+[[ "$(resolve_arch_dir aarch64)" == "binary_arm64" ]] || fail "aarch64 should map to binary_arm64"
+[[ "$(resolve_arch_dir arm64)" == "binary_arm64" ]] || fail "arm64 should map to binary_arm64"
+if resolve_arch_dir mips >/dev/null 2>&1; then
+  fail "unsupported architecture should fail"
+fi
+pass "architecture mapping helper"
+
+# Test 6: OS family helper
+ID="alpine"
+ID_LIKE=""
+[[ "$(resolve_os_family)" == "alpine" ]] || fail "ID=alpine should map to alpine"
+ID="debian"
+ID_LIKE="debian"
+[[ "$(resolve_os_family)" == "debian/systemd-compatible" ]] || fail "debian-like should map to debian/systemd-compatible"
+pass "os family helper"
+
+# Test 7: dry-run output includes expected download and service lines
+ID="alpine"
+ID_LIKE=""
+dry_run_out="$(dry_run_preview 2>&1 || true)"
+echo "$dry_run_out" | grep -Eq 'binary_(amd64|arm64)/xray -> /usr/local/bin/xray' || fail "dry-run should include xray download path"
+[[ "$dry_run_out" == *"/etc/init.d/xray"* ]] || fail "dry-run alpine should include OpenRC path"
+pass "dry-run preview output"
+
+# Test 8: BBR guard/message exists for readonly environments
+enable_bbr_source="$(declare -f enable_bbr)"
+[[ "$enable_bbr_source" == *'[[ ! -w /etc/sysctl.conf ]]'* ]] || fail "enable_bbr should check writable sysctl.conf"
+[[ "$enable_bbr_source" == *'Skip BBR: /etc/sysctl.conf is not writable'* ]] || fail "enable_bbr should expose clear skip message"
+pass "bbr readonly guard present"
+
 echo "All tests passed."

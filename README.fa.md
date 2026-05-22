@@ -1,6 +1,6 @@
 # 📦 [项目说明](README.md) | [Project](README.en.md) | [اطلاعات پروژه](README.fa.md)
 
-> آدرس مخزن: https://github.com/livingfree2023/xray-vless-reality-nokey
+> آدرس مخزن: https://github.com/livingfree2023/nokey
 
 اسکریپت‌های معروف «با یک کلیک» این روزها بیشتر ~~سنگین و پیچیده~~ شده‌اند، پر از امکانات و ~~خیلی وقت است از هدف اصلی‌شان دور شده‌اند~~ بسیار پیشرفته هستند.
 
@@ -23,7 +23,7 @@
 3. با دستورات رسمی UUID و KeyPair را تولید می‌کند  
 4. پورت آزاد تصادفی را پیدا می‌کند  
 5. با نسخه‌های مختلف لینوکس سازگار است  
-6. از اسکریپت رسمی xray-core استفاده می‌کند  
+6. باینری آماده xray را مستقیم دانلود می‌کند (amd64/arm64)  
 7. امکان تنظیم پروتکل، UUID، SNI، و پورت با پارامترها  
 8. نمایش راهنما با `--help`  
 9. فقط مراحل ساده را نشان می‌دهد—لاگ کامل در فایل ذخیره می‌شود  
@@ -35,15 +35,23 @@
 # 🧑‍🍳 روش استفاده (با دسترسی root)
 
 ```bash
-bash -c "$(curl -sL https://raw.githubusercontent.com/livingfree2023/xray-vless-reality-nokey/refs/heads/main/nokey.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)"
 ```
 
 ---
 
-# 🧹 حذف Xray-core (این اسکریپت ردپا ندارد، نیازی به حذف نیست)
+# 🔍 پیش‌نمایش بدون تغییر سیستم (dry-run)
 
 ```bash
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ remove --purge
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)" @ --dry-run
+```
+
+---
+
+# 🧹 حذف
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)" @ --remove
 ```
 
 ---

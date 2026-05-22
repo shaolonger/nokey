@@ -7,7 +7,7 @@ readonly LOG_FILE="nokey.log"
 readonly URL_FILE="nokey.url"
 readonly DEFAULT_DOMAIN="www.amd.com"
 readonly GITHUB_URL="https://github.com/livingfree2023/nokey"
-readonly GITHUB_CMD="bash <(curl -sL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)"
+readonly GITHUB_CMD="bash <(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)"
 readonly SERVICE_NAME="xray.service"
 readonly SERVICE_NAME_ALPINE="xray"
 readonly GITHUB_BINARY_BASE_URL="https://github.com/livingfree2023/nokey/raw/refs/heads/main"
@@ -69,6 +69,42 @@ task_fail() {
 
 log_verbose() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
+}
+
+resolve_arch_dir() {
+    case "${1:-$(uname -m)}" in
+        x86_64|amd64)
+            echo "binary_amd64"
+            ;;
+        aarch64|arm64)
+            echo "binary_arm64"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+resolve_arch_name() {
+    case "${1:-$(uname -m)}" in
+        x86_64|amd64)
+            echo "amd64"
+            ;;
+        aarch64|arm64)
+            echo "arm64"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+resolve_os_family() {
+    if [ "${ID:-}" = "alpine" ] || [ "${ID_LIKE:-}" = "alpine" ]; then
+        echo "alpine"
+    else
+        echo "debian/systemd-compatible"
+    fi
 }
 
 check_root() {
@@ -483,27 +519,10 @@ install_xray() {
 
     local arch_dir=""
     local arch_name=""
-    case "$(uname -m)" in
-        x86_64|amd64)
-            arch_dir="binary_amd64"
-            arch_name="amd64"
-            ;;
-        aarch64|arm64)
-            arch_dir="binary_arm64"
-            arch_name="arm64"
-            ;;
-        *)
-            task_fail
-            error "Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."
-            exit 1
-            ;;
-    esac
+    arch_dir="$(resolve_arch_dir)" || { task_fail; error "Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
+    arch_name="$(resolve_arch_name)" || { task_fail; error "Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
 
-    if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
-        info "Detected OS: alpine | Architecture: ${arch_name}"
-    else
-        info "Detected OS: debian/systemd-compatible | Architecture: ${arch_name}"
-    fi
+    info "Detected OS: $(resolve_os_family) | Architecture: ${arch_name}"
 
     mkdir -p /usr/local/bin /usr/local/share/xray /usr/local/etc/xray /var/log/xray || { task_fail; error "Failed to create xray directories"; exit 1; }
     log_verbose "Created install directories under /usr/local and /var/log/xray"
@@ -522,8 +541,10 @@ install_xray() {
     chmod 755 /usr/local/bin/xray
     log_verbose "Set executable permissions on /usr/local/bin/xray"
 
-    local xray_rc_tmp="/tmp/nokey.xray.rc.$$"
-    local xray_service_tmp="/tmp/nokey.xray.service.$$"
+    local xray_rc_tmp
+    local xray_service_tmp
+    xray_rc_tmp="$(mktemp /tmp/nokey.xray.rc.XXXXXX)" || { task_fail; error "Failed to create temporary file for xray.rc"; exit 1; }
+    xray_service_tmp="$(mktemp /tmp/nokey.xray.service.XXXXXX)" || { task_fail; error "Failed to create temporary file for xray.service"; exit 1; }
 
     if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
         info "Installing OpenRC service: /etc/init.d/${SERVICE_NAME_ALPINE}"
@@ -589,12 +610,37 @@ uninstall_xray() {
 
 enable_bbr() {
     task_start "最后，打开BBR / Finishing, Enabling BBR"
+
+    # Some VPS/container environments do not expose writable sysctl knobs.
+    if [[ ! -w /etc/sysctl.conf ]]; then
+        task_done_with_info "Skip BBR: /etc/sysctl.conf is not writable"
+        log_verbose "Skip BBR: /etc/sysctl.conf is not writable"
+        return
+    fi
+
+    if [[ ! -e /proc/sys/net/ipv4/tcp_congestion_control ]]; then
+        task_done_with_info "Skip BBR: kernel does not expose tcp_congestion_control"
+        log_verbose "Skip BBR: /proc/sys/net/ipv4/tcp_congestion_control not found"
+        return
+    fi
+
     sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
     sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
     echo "net.ipv4.tcp_congestion_control = bbr" >> /etc/sysctl.conf
-    echo "net.core.default_qdisc = fq" >> /etc/sysctl.conf
-    sysctl -p >> "$LOG_FILE" 2>&1
-    task_done
+
+    # net.core.default_qdisc may not exist in some kernels/containers.
+    if [[ -e /proc/sys/net/core/default_qdisc ]]; then
+        echo "net.core.default_qdisc = fq" >> /etc/sysctl.conf
+    else
+        log_verbose "Skip net.core.default_qdisc: kernel key not available"
+    fi
+
+    if sysctl -p >> "$LOG_FILE" 2>&1; then
+        task_done
+    else
+        task_done_with_info "Skip BBR apply: sysctl not permitted in this environment"
+        log_verbose "Skip BBR apply: sysctl -p failed (likely container/readonly procfs)"
+    fi
 
 }
 
@@ -983,26 +1029,10 @@ dry_run_preview() {
 
     local arch_dir=""
     local arch_name=""
-    case "$(uname -m)" in
-        x86_64|amd64)
-            arch_dir="binary_amd64"
-            arch_name="amd64"
-            ;;
-        aarch64|arm64)
-            arch_dir="binary_arm64"
-            arch_name="arm64"
-            ;;
-        *)
-            task_fail
-            error "Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."
-            exit 1
-            ;;
-    esac
-
-    local os_family="debian/systemd-compatible"
-    if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
-        os_family="alpine"
-    fi
+    arch_dir="$(resolve_arch_dir)" || { task_fail; error "Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
+    arch_name="$(resolve_arch_name)" || { task_fail; error "Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
+    local os_family
+    os_family="$(resolve_os_family)"
 
     info "Dry run mode enabled: no file/service/system changes will be made."
     info "Detected OS: ${os_family} | Architecture: ${arch_name}"

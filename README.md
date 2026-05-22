@@ -1,6 +1,6 @@
 # 📦 [项目说明](README.md) | [Project](README.en.md) | [اطلاعات پروژه](README.fa.md)
 
-> 项目地址: https://github.com/livingfree2023/xray-vless-reality-nokey
+> 项目地址: https://github.com/livingfree2023/nokey
 > 
 > 如果你只是想换个端口，换个uuid，或者买的新鸡急着去测youtube/speedtest，这个脚本可能非常适合你
 
@@ -22,7 +22,7 @@
 3. 按照官方命令生成UUID/KeyPair
 4. 自动找随机空闲端口（10000以上，--port可指定任意）
 5. 尽可能自动适配所有linux版本
-6. xray-core直接用原装正版脚本安装
+6. xray-core直接下载预编译二进制（amd64/arm64）
 7. 可带参数指定协议栈，UUID，SNI，端口
 8. 可查看帮助 --help
 9. 只输出极简步骤，详细log输出到log文件
@@ -38,17 +38,22 @@
  
 1. 极速安装（在root下）
 ```
-bash -c "$(curl -sL https://raw.githubusercontent.com/livingfree2023/xray-vless-reality-nokey/refs/heads/main/nokey.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)"
 ```
 
 2. 如果没有ipv4（纯v6的鸡），同时如果warp了ipv4的出口，此时要指定入口为v6，否则连不通（因为v4优先级比v6高）
 ```
-bash -c "$(curl -sL https://raw.githubusercontent.com/livingfree2023/xray-vless-reality-nokey/refs/heads/main/nokey.sh)" @ --netstack=6
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)" @ --netstack=6
 ```
 
 3. 强制更新xray 和 geodata
 ```
-bash -c "$(curl -sL https://raw.githubusercontent.com/livingfree2023/xray-vless-reality-nokey/refs/heads/main/nokey.sh)" @ --force
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)" @ --force
+```
+
+4. 仅预览安装流程（不修改系统）
+```
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)" @ --dry-run
 ```
 
 错误难免，请多指教，我希望能做出适合所有linux版本的，但是自己财力有限，欢迎大佬借我机器调试
@@ -57,7 +62,7 @@ bash -c "$(curl -sL https://raw.githubusercontent.com/livingfree2023/xray-vless-
 ## 卸载
 
 ```
-bash -c "$(curl -sL https://raw.githubusercontent.com/livingfree2023/xray-vless-reality-nokey/refs/heads/main/nokey.sh)" @ --remove
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)" @ --remove
 ```
 
 
