@@ -10,16 +10,14 @@ readonly GITHUB_URL="https://github.com/livingfree2023/nokey"
 readonly GITHUB_CMD="bash <(curl -sL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)"
 readonly SERVICE_NAME="xray.service"
 readonly SERVICE_NAME_ALPINE="xray"
-
-readonly GITHUB_XRAY_OFFICIAL_SCRIPT_URL="https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh"
-readonly GITHUB_XRAY_OFFICIAL_SCRIPT_ALPINE_URL="https://raw.githubusercontent.com/livingfree2023/Xray-install/refs/heads/main/alpinelinux/install-release.sh"
-readonly GITHUB_XRAY_OFFICIAL_SCRIPT="install-release.sh"
+readonly GITHUB_BINARY_BASE_URL="https://github.com/livingfree2023/nokey/raw/refs/heads/main"
 
 mldsa_enabled=0
 current_hostname=$(hostname)
 caddy_mode=0
 port_from_flag=0
 reality_dest_port=443  # default port for REALITY destination (not the inbound port)
+dry_run=0
 
 # Color definitions
 readonly red='\e[91m'
@@ -67,7 +65,14 @@ task_fail() {
     echo -e "[${red}FAILED${none}]" | tee -a "$LOG_FILE"
 }
 
+log_verbose() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
+}
+
 check_root() {
+    if [[ $dry_run -eq 1 ]]; then
+        return
+    fi
     if [ "$EUID" -ne 0 ]; then
         error "Error: Please run as root / 错误: 请以root身份运行此脚本: ${red}sudo -i${none}"
         exit 1
@@ -473,25 +478,65 @@ install_xray() {
     fi
 
     task_start "开始，安装或升级XRAY / Install or upgrade XRAY"
-    
+
+    local arch_dir=""
+    local arch_name=""
+    case "$(uname -m)" in
+        x86_64|amd64)
+            arch_dir="binary_amd64"
+            arch_name="amd64"
+            ;;
+        aarch64|arm64)
+            arch_dir="binary_arm64"
+            arch_name="arm64"
+            ;;
+        *)
+            task_fail
+            error "Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."
+            exit 1
+            ;;
+    esac
+
     if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
-      info "\nAlpine OS: install xray formal release, alpine install script does not support pre-release"
-      ash $GITHUB_XRAY_OFFICIAL_SCRIPT >> $LOG_FILE 2>&1
-      if [[ $? -ne 0 ]]; then
-          task_fail
-          error "Xray installation failed."
-          exit 1
-      fi
-      rc-update add "$SERVICE_NAME_ALPINE"               >> $LOG_FILE 2>&1
-      rc-service "$SERVICE_NAME_ALPINE" start            >> $LOG_FILE 2>&1
+        info "Detected OS: alpine | Architecture: ${arch_name}"
     else
-      # info "\nInstalling latest xray including pre-release"
-      bash $GITHUB_XRAY_OFFICIAL_SCRIPT install  >> "$LOG_FILE" 2>&1
-      if [[ $? -ne 0 ]]; then
-          task_fail
-          error "Xray installation failed."
-          exit 1
-      fi
+        info "Detected OS: debian/systemd-compatible | Architecture: ${arch_name}"
+    fi
+
+    mkdir -p /usr/local/bin /usr/local/share/xray /usr/local/etc/xray /var/log/xray || { task_fail; error "Failed to create xray directories"; exit 1; }
+    log_verbose "Created install directories under /usr/local and /var/log/xray"
+
+    info "Downloading xray binary and data files from ${arch_dir}"
+    log_verbose "Downloading: ${GITHUB_BINARY_BASE_URL}/${arch_dir}/xray -> /usr/local/bin/xray"
+    curl -fSL "${GITHUB_BINARY_BASE_URL}/${arch_dir}/xray" -o /usr/local/bin/xray >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download ${arch_dir}/xray"; exit 1; }
+    log_verbose "Downloading: ${GITHUB_BINARY_BASE_URL}/${arch_dir}/geoip.dat -> /usr/local/share/xray/geoip.dat"
+    curl -fSL "${GITHUB_BINARY_BASE_URL}/${arch_dir}/geoip.dat" -o /usr/local/share/xray/geoip.dat >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download ${arch_dir}/geoip.dat"; exit 1; }
+    log_verbose "Downloading: ${GITHUB_BINARY_BASE_URL}/${arch_dir}/geosite.dat -> /usr/local/share/xray/geosite.dat"
+    curl -fSL "${GITHUB_BINARY_BASE_URL}/${arch_dir}/geosite.dat" -o /usr/local/share/xray/geosite.dat >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download ${arch_dir}/geosite.dat"; exit 1; }
+    log_verbose "Downloading: ${GITHUB_BINARY_BASE_URL}/${arch_dir}/LICENSE -> /usr/local/share/xray/LICENSE"
+    curl -fSL "${GITHUB_BINARY_BASE_URL}/${arch_dir}/LICENSE" -o /usr/local/share/xray/LICENSE >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download ${arch_dir}/LICENSE"; exit 1; }
+    log_verbose "Downloading: ${GITHUB_BINARY_BASE_URL}/${arch_dir}/README.md -> /usr/local/share/xray/README.md"
+    curl -fSL "${GITHUB_BINARY_BASE_URL}/${arch_dir}/README.md" -o /usr/local/share/xray/README.md >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download ${arch_dir}/README.md"; exit 1; }
+    chmod 755 /usr/local/bin/xray
+    log_verbose "Set executable permissions on /usr/local/bin/xray"
+
+    if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
+        info "Installing OpenRC service: /etc/init.d/${SERVICE_NAME_ALPINE}"
+        install -m 755 xray.rc /etc/init.d/"$SERVICE_NAME_ALPINE" >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to install /etc/init.d/$SERVICE_NAME_ALPINE"; exit 1; }
+        log_verbose "Installed OpenRC service file from xray.rc"
+        rc-update add "$SERVICE_NAME_ALPINE" >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to enable OpenRC service $SERVICE_NAME_ALPINE"; exit 1; }
+        log_verbose "Enabled OpenRC service: $SERVICE_NAME_ALPINE"
+    else
+        info "Installing systemd service: /etc/systemd/system/${SERVICE_NAME}"
+        sed -e 's/\$INSTALL_USER/nobody/g' \
+            -e '/\${temp_CapabilityBoundingSet}/d' \
+            -e '/\${temp_AmbientCapabilities}/d' \
+            -e '/\${temp_NoNewPrivileges}/d' \
+            xray.service > /etc/systemd/system/"$SERVICE_NAME" || { task_fail; error "Failed to write /etc/systemd/system/$SERVICE_NAME"; exit 1; }
+        log_verbose "Installed systemd service file from xray.service"
+        systemctl daemon-reload >> "$LOG_FILE" 2>&1 || { task_fail; error "systemctl daemon-reload failed"; exit 1; }
+        systemctl enable "$SERVICE_NAME" >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to enable systemd service $SERVICE_NAME"; exit 1; }
+        log_verbose "Enabled systemd service: $SERVICE_NAME"
     fi
 
     task_done
@@ -516,7 +561,14 @@ uninstall_xray() {
       info "\nAlpine OS: uninstall xray"
       uninstall_in_alpine
     else
-      bash $GITHUB_XRAY_OFFICIAL_SCRIPT remove --purge >> "$LOG_FILE" 2>&1
+      systemctl stop "$SERVICE_NAME" >> "$LOG_FILE" 2>&1
+      systemctl disable "$SERVICE_NAME" >> "$LOG_FILE" 2>&1
+      rm -f /etc/systemd/system/"$SERVICE_NAME" >> "$LOG_FILE" 2>&1
+      systemctl daemon-reload >> "$LOG_FILE" 2>&1
+      rm -rf "/usr/local/bin/xray" >> "$LOG_FILE" 2>&1
+      rm -rf "/usr/local/share/xray" >> "$LOG_FILE" 2>&1
+      rm -rf "/usr/local/etc/xray/" >> "$LOG_FILE" 2>&1
+      rm -rf "/var/log/xray/" >> "$LOG_FILE" 2>&1
     fi 
 
     task_done
@@ -610,6 +662,9 @@ parse_args() {
           uninstall_xray
           info "卸载完成 / Uninstallation complete ... [${green}OK${none}]"
           exit 0
+          ;;
+        --dry-run)
+          dry_run=1
           ;;
         *)
           error "Unknown option / 什么鬼参数: $arg"
@@ -906,9 +961,75 @@ show_help() {
   echo "  --caddy            从运行的Caddy服务自动检测域名和端口 / Detect domain and port from Caddy service"
   echo "  --force            强制重装 / Force Reinstall"
   echo "  --remove           卸载Xray和NoKey / Uninstall Xray and NoKey"
+  echo "  --dry-run          仅预览安装动作，不写入系统 / Preview actions only"
   echo "  --help             显示此帮助信息 / Show this help message"
 
   exit 0
+}
+
+dry_run_preview() {
+    task_start "Dry Run / 预览安装流程"
+
+    local arch_dir=""
+    local arch_name=""
+    case "$(uname -m)" in
+        x86_64|amd64)
+            arch_dir="binary_amd64"
+            arch_name="amd64"
+            ;;
+        aarch64|arm64)
+            arch_dir="binary_arm64"
+            arch_name="arm64"
+            ;;
+        *)
+            task_fail
+            error "Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."
+            exit 1
+            ;;
+    esac
+
+    local os_family="debian/systemd-compatible"
+    if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
+        os_family="alpine"
+    fi
+
+    info "Dry run mode enabled: no file/service/system changes will be made."
+    info "Detected OS: ${os_family} | Architecture: ${arch_name}"
+    log_verbose "DRY RUN | OS=${os_family} ARCH=${arch_name}"
+
+    info "Would create directories:"
+    info "  /usr/local/bin"
+    info "  /usr/local/share/xray"
+    info "  /usr/local/etc/xray"
+    info "  /var/log/xray"
+
+    info "Would download files:"
+    info "  ${GITHUB_BINARY_BASE_URL}/${arch_dir}/xray -> /usr/local/bin/xray"
+    info "  ${GITHUB_BINARY_BASE_URL}/${arch_dir}/geoip.dat -> /usr/local/share/xray/geoip.dat"
+    info "  ${GITHUB_BINARY_BASE_URL}/${arch_dir}/geosite.dat -> /usr/local/share/xray/geosite.dat"
+    info "  ${GITHUB_BINARY_BASE_URL}/${arch_dir}/LICENSE -> /usr/local/share/xray/LICENSE"
+    info "  ${GITHUB_BINARY_BASE_URL}/${arch_dir}/README.md -> /usr/local/share/xray/README.md"
+
+    info "Would set permission:"
+    info "  chmod 755 /usr/local/bin/xray"
+
+    if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
+        info "Would install service (OpenRC):"
+        info "  xray.rc -> /etc/init.d/${SERVICE_NAME_ALPINE}"
+        info "  rc-update add ${SERVICE_NAME_ALPINE}"
+        info "  rc-service ${SERVICE_NAME_ALPINE} restart (after config generation)"
+    else
+        info "Would install service (systemd):"
+        info "  xray.service -> /etc/systemd/system/${SERVICE_NAME}"
+        info "  systemctl daemon-reload"
+        info "  systemctl enable ${SERVICE_NAME}"
+        info "  systemctl restart ${SERVICE_NAME} (after config generation)"
+    fi
+
+    info "Would write config:"
+    info "  /usr/local/etc/xray/config.json"
+
+    task_done
 }
 
 
@@ -920,7 +1041,7 @@ check_service_status() {
           task_done
       else
         error "[服务未运行 / Service is not active]" 
-        service status "$SERVICE_NAME_ALPINE" | tee -a "$LOG_FILE"
+        rc-service "$SERVICE_NAME_ALPINE" status | tee -a "$LOG_FILE"
         error "运行详细记录在 $LOG_FILE / See complete logs"
         exit 1
       fi
@@ -1017,36 +1138,10 @@ output_results() {
 }
 
 
-download_official_script() {
-
-    # Download official script
-    task_start "下载，官方脚本 / Download Official Script"
-
-    local url="$GITHUB_XRAY_OFFICIAL_SCRIPT_URL"
-
-    if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
-        # Add cache-busting query to reduce stale CDN/script fetches in repeated rapid tests.
-        url="${GITHUB_XRAY_OFFICIAL_SCRIPT_ALPINE_URL}?t=$(date +%s)"
-        info "\nAlpine OS detected"        
-    fi    
-
-    rm -f "$GITHUB_XRAY_OFFICIAL_SCRIPT"
-    if curl -fSL -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' "$url" -o "$GITHUB_XRAY_OFFICIAL_SCRIPT" >> "$LOG_FILE" 2>&1 && [[ -s "$GITHUB_XRAY_OFFICIAL_SCRIPT" ]]; then
-        task_done
-    else
-        task_fail
-        error "无法下载官方脚本或下载内容为空，检查互联网链接，详细查看$LOG_FILE"
-        exit 1
-    fi
-
-}
-
 # Main function
 main() {
     SECONDS=0
-    
-    check_root
-    
+
     if [ -f /etc/os-release ]; then
         . /etc/os-release
     else
@@ -1058,8 +1153,14 @@ main() {
     echo -e "当前版本 / Version: ${cyan}${SCRIPT_VERSION}${none} " | tee -a "$LOG_FILE"
     parse_args "$@"
 
+    if [[ $dry_run -eq 1 ]]; then
+        dry_run_preview
+        exit 0
+    fi
+
+    check_root
+
     install_dependencies # the next function needs curl, in debian 9 curl is not shipped
-    download_official_script
     detect_network_interfaces
     
     install_xray
