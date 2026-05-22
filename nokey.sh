@@ -11,6 +11,8 @@ readonly GITHUB_CMD="bash <(curl -sL https://raw.githubusercontent.com/livingfre
 readonly SERVICE_NAME="xray.service"
 readonly SERVICE_NAME_ALPINE="xray"
 readonly GITHUB_BINARY_BASE_URL="https://github.com/livingfree2023/nokey/raw/refs/heads/main"
+readonly GITHUB_XRAY_RC_URL="${GITHUB_BINARY_BASE_URL}/xray.rc"
+readonly GITHUB_XRAY_SERVICE_URL="${GITHUB_BINARY_BASE_URL}/xray.service"
 
 mldsa_enabled=0
 current_hostname=$(hostname)
@@ -520,19 +522,28 @@ install_xray() {
     chmod 755 /usr/local/bin/xray
     log_verbose "Set executable permissions on /usr/local/bin/xray"
 
+    local xray_rc_tmp="/tmp/nokey.xray.rc.$$"
+    local xray_service_tmp="/tmp/nokey.xray.service.$$"
+
     if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
         info "Installing OpenRC service: /etc/init.d/${SERVICE_NAME_ALPINE}"
-        install -m 755 xray.rc /etc/init.d/"$SERVICE_NAME_ALPINE" >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to install /etc/init.d/$SERVICE_NAME_ALPINE"; exit 1; }
+        log_verbose "Downloading service file: ${GITHUB_XRAY_RC_URL} -> ${xray_rc_tmp}"
+        curl -fSL "${GITHUB_XRAY_RC_URL}" -o "${xray_rc_tmp}" >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download xray.rc"; exit 1; }
+        install -m 755 "${xray_rc_tmp}" /etc/init.d/"$SERVICE_NAME_ALPINE" >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to install /etc/init.d/$SERVICE_NAME_ALPINE"; exit 1; }
+        rm -f "${xray_rc_tmp}" >> "$LOG_FILE" 2>&1
         log_verbose "Installed OpenRC service file from xray.rc"
         rc-update add "$SERVICE_NAME_ALPINE" >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to enable OpenRC service $SERVICE_NAME_ALPINE"; exit 1; }
         log_verbose "Enabled OpenRC service: $SERVICE_NAME_ALPINE"
     else
         info "Installing systemd service: /etc/systemd/system/${SERVICE_NAME}"
+        log_verbose "Downloading service file: ${GITHUB_XRAY_SERVICE_URL} -> ${xray_service_tmp}"
+        curl -fSL "${GITHUB_XRAY_SERVICE_URL}" -o "${xray_service_tmp}" >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download xray.service"; exit 1; }
         sed -e 's/\$INSTALL_USER/nobody/g' \
             -e '/\${temp_CapabilityBoundingSet}/d' \
             -e '/\${temp_AmbientCapabilities}/d' \
             -e '/\${temp_NoNewPrivileges}/d' \
-            xray.service > /etc/systemd/system/"$SERVICE_NAME" || { task_fail; error "Failed to write /etc/systemd/system/$SERVICE_NAME"; exit 1; }
+            "${xray_service_tmp}" > /etc/systemd/system/"$SERVICE_NAME" || { task_fail; error "Failed to write /etc/systemd/system/$SERVICE_NAME"; exit 1; }
+        rm -f "${xray_service_tmp}" >> "$LOG_FILE" 2>&1
         log_verbose "Installed systemd service file from xray.service"
         systemctl daemon-reload >> "$LOG_FILE" 2>&1 || { task_fail; error "systemctl daemon-reload failed"; exit 1; }
         systemctl enable "$SERVICE_NAME" >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to enable systemd service $SERVICE_NAME"; exit 1; }
@@ -1015,12 +1026,14 @@ dry_run_preview() {
 
     if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
         info "Would install service (OpenRC):"
-        info "  xray.rc -> /etc/init.d/${SERVICE_NAME_ALPINE}"
+        info "  ${GITHUB_XRAY_RC_URL} -> /tmp/nokey.xray.rc.<pid>"
+        info "  /tmp/nokey.xray.rc.<pid> -> /etc/init.d/${SERVICE_NAME_ALPINE}"
         info "  rc-update add ${SERVICE_NAME_ALPINE}"
         info "  rc-service ${SERVICE_NAME_ALPINE} restart (after config generation)"
     else
         info "Would install service (systemd):"
-        info "  xray.service -> /etc/systemd/system/${SERVICE_NAME}"
+        info "  ${GITHUB_XRAY_SERVICE_URL} -> /tmp/nokey.xray.service.<pid>"
+        info "  /tmp/nokey.xray.service.<pid> -> /etc/systemd/system/${SERVICE_NAME}"
         info "  systemctl daemon-reload"
         info "  systemctl enable ${SERVICE_NAME}"
         info "  systemctl restart ${SERVICE_NAME} (after config generation)"
