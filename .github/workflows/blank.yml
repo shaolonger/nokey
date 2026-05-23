@@ -100,9 +100,15 @@ jobs:
           release_json="$(curl -sSL https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/latest || true)"
           release_id="$(printf '%s' "${release_json}" | jq -r '.id // empty' 2>/dev/null || true)"
           if [ -n "${release_id:-}" ]; then
-            asset_ids="$(curl -fsSL https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets | jq -r '.[].id' || true)"
+            assets_json="$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets")"
+            asset_ids="$(printf '%s' "${assets_json}" | jq -r '.[] | select(.name | test("^(xray_(amd64|arm64)|geoip\\.dat|geosite\\.dat)$")) | .id' || true)"
             for id in ${asset_ids}; do
-              curl -fsSL -X DELETE -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/${id}" >/dev/null
+              # Some assets may occasionally return 422 when concurrently replaced; do not fail whole workflow.
+              code="$(curl -sS -o /dev/null -w "%{http_code}" -X DELETE -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/${id}")"
+              if [ "${code}" != "204" ] && [ "${code}" != "404" ] && [ "${code}" != "422" ]; then
+                echo "Failed to delete asset id=${id}, HTTP ${code}"
+                exit 1
+              fi
             done
           fi
 
