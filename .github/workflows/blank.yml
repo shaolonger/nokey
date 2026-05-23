@@ -6,47 +6,29 @@ on:
   workflow_dispatch: # Allows you to manually trigger the workflow from the Actions tab
 
 permissions:
-  contents: write # Grants permission to push binaries back to the repository
+  contents: write # Needed for creating/updating GitHub releases
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Create Binary Directory
+      - name: Create Temp Distribution Directory
         run: |
-          mkdir -p bin_dist
+          mkdir -p "${RUNNER_TEMP}/bin_dist" "${RUNNER_TEMP}/xray_extract_amd64" "${RUNNER_TEMP}/xray_extract_arm64"
 
       - name: Download and Extract AMD64 (x86_64) Binary
         run: |
           wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-          unzip -o Xray-linux-64.zip -d binary_amd64
-          cp binary_amd64/* bin_dist/
-          mv bin_dist/xray bin_dist/xray_amd64
+          unzip -o Xray-linux-64.zip -d "${RUNNER_TEMP}/xray_extract_amd64"
+          cp "${RUNNER_TEMP}/xray_extract_amd64"/xray "${RUNNER_TEMP}/bin_dist"/xray_amd64
+          cp "${RUNNER_TEMP}/xray_extract_amd64"/geoip.dat "${RUNNER_TEMP}/bin_dist"/geoip.dat
+          cp "${RUNNER_TEMP}/xray_extract_amd64"/geosite.dat "${RUNNER_TEMP}/bin_dist"/geosite.dat
 
       - name: Download and Extract ARM64 (aarch64) Binary
         run: |
           wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-arm64-v8a.zip 
-          unzip -o Xray-linux-arm64-v8a.zip -d binary_arm64
-          cp binary_arm64/xray bin_dist/
-          mv bin_dist/xray bin_dist/xray_arm64
-
-      # - name: Commit and Push Changes
-        # run: |
-          # git config --global user.name "github-actions[bot]"
-          # git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
-          # git add -A
-          
-          # # Only commit and push if there are changes to avoid failing the workflow
-          # if git diff --cached --quiet; then
-          #   echo "No new Xray changes detected."
-          # else
-          #   git commit -m "Update Xray binaries to latest release"
-          #   git push
-          # fi
+          unzip -o Xray-linux-arm64-v8a.zip -d "${RUNNER_TEMP}/xray_extract_arm64"
+          cp "${RUNNER_TEMP}/xray_extract_arm64"/xray "${RUNNER_TEMP}/bin_dist"/xray_arm64
 
       - name: Release and Upload
         uses: softprops/action-gh-release@v2
@@ -55,8 +37,8 @@ jobs:
           name: Latest Xray Binaries
           body: "Automatic sync with latest Xray-core release."
           files: |
-            bin_dist/xray*
-            bin_dist/geo*.dat
+            ${{ runner.temp }}/bin_dist/xray*
+            ${{ runner.temp }}/bin_dist/geo*.dat
             
           fail_on_unmatched_files: true
           make_latest: true
