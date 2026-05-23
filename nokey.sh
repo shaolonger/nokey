@@ -10,9 +10,9 @@ readonly GITHUB_URL="https://github.com/livingfree2023/nokey"
 readonly GITHUB_CMD="bash <(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)"
 readonly SERVICE_NAME="xray.service"
 readonly SERVICE_NAME_ALPINE="xray"
-readonly GITHUB_BINARY_BASE_URL="https://github.com/livingfree2023/nokey/raw/refs/heads/main"
-readonly GITHUB_XRAY_RC_URL="${GITHUB_BINARY_BASE_URL}/xray.rc"
-readonly GITHUB_XRAY_SERVICE_URL="${GITHUB_BINARY_BASE_URL}/xray.service"
+readonly GITHUB_RELEASE_BASE_URL="https://github.com/livingfree2023/nokey/releases/download/latest"
+readonly GITHUB_XRAY_RC_URL="https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/xray.rc"
+readonly GITHUB_XRAY_SERVICE_URL="https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/xray.service"
 
 mldsa_enabled=0
 current_hostname=$(hostname)
@@ -71,13 +71,13 @@ log_verbose() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
 }
 
-resolve_arch_dir() {
+resolve_arch_binary_name() {
     case "${1:-$(uname -m)}" in
         x86_64|amd64)
-            echo "binary_amd64"
+            echo "xray_amd64"
             ;;
         aarch64|arm64)
-            echo "binary_arm64"
+            echo "xray_arm64"
             ;;
         *)
             return 1
@@ -517,9 +517,9 @@ install_xray() {
 
     task_start "开始，安装或升级XRAY / Install or upgrade XRAY"
 
-    local arch_dir=""
+    local arch_binary_name=""
     local arch_name=""
-    arch_dir="$(resolve_arch_dir)" || { task_fail; error "Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
+    arch_binary_name="$(resolve_arch_binary_name)" || { task_fail; error "Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
     arch_name="$(resolve_arch_name)" || { task_fail; error "Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
 
     info "Detected OS: $(resolve_os_family) | Architecture: ${arch_name}"
@@ -527,17 +527,13 @@ install_xray() {
     mkdir -p /usr/local/bin /usr/local/share/xray /usr/local/etc/xray /var/log/xray || { task_fail; error "Failed to create xray directories"; exit 1; }
     log_verbose "Created install directories under /usr/local and /var/log/xray"
 
-    info "Downloading xray binary and data files from ${arch_dir}"
-    log_verbose "Downloading: ${GITHUB_BINARY_BASE_URL}/${arch_dir}/xray -> /usr/local/bin/xray"
-    curl -fSL "${GITHUB_BINARY_BASE_URL}/${arch_dir}/xray" -o /usr/local/bin/xray >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download ${arch_dir}/xray"; exit 1; }
-    log_verbose "Downloading: ${GITHUB_BINARY_BASE_URL}/${arch_dir}/geoip.dat -> /usr/local/share/xray/geoip.dat"
-    curl -fSL "${GITHUB_BINARY_BASE_URL}/${arch_dir}/geoip.dat" -o /usr/local/share/xray/geoip.dat >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download ${arch_dir}/geoip.dat"; exit 1; }
-    log_verbose "Downloading: ${GITHUB_BINARY_BASE_URL}/${arch_dir}/geosite.dat -> /usr/local/share/xray/geosite.dat"
-    curl -fSL "${GITHUB_BINARY_BASE_URL}/${arch_dir}/geosite.dat" -o /usr/local/share/xray/geosite.dat >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download ${arch_dir}/geosite.dat"; exit 1; }
-    log_verbose "Downloading: ${GITHUB_BINARY_BASE_URL}/${arch_dir}/LICENSE -> /usr/local/share/xray/LICENSE"
-    curl -fSL "${GITHUB_BINARY_BASE_URL}/${arch_dir}/LICENSE" -o /usr/local/share/xray/LICENSE >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download ${arch_dir}/LICENSE"; exit 1; }
-    log_verbose "Downloading: ${GITHUB_BINARY_BASE_URL}/${arch_dir}/README.md -> /usr/local/share/xray/README.md"
-    curl -fSL "${GITHUB_BINARY_BASE_URL}/${arch_dir}/README.md" -o /usr/local/share/xray/README.md >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download ${arch_dir}/README.md"; exit 1; }
+    info "Downloading xray binary and data files from GitHub Releases"
+    log_verbose "Downloading: ${GITHUB_RELEASE_BASE_URL}/${arch_binary_name} -> /usr/local/bin/xray"
+    curl -fSL "${GITHUB_RELEASE_BASE_URL}/${arch_binary_name}" -o /usr/local/bin/xray >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download ${arch_binary_name}"; exit 1; }
+    log_verbose "Downloading: ${GITHUB_RELEASE_BASE_URL}/geoip.dat -> /usr/local/share/xray/geoip.dat"
+    curl -fSL "${GITHUB_RELEASE_BASE_URL}/geoip.dat" -o /usr/local/share/xray/geoip.dat >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download geoip.dat"; exit 1; }
+    log_verbose "Downloading: ${GITHUB_RELEASE_BASE_URL}/geosite.dat -> /usr/local/share/xray/geosite.dat"
+    curl -fSL "${GITHUB_RELEASE_BASE_URL}/geosite.dat" -o /usr/local/share/xray/geosite.dat >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download geosite.dat"; exit 1; }
     chmod 755 /usr/local/bin/xray
     log_verbose "Set executable permissions on /usr/local/bin/xray"
 
@@ -1027,9 +1023,9 @@ show_help() {
 dry_run_preview() {
     task_start "Dry Run / 预览安装流程"
 
-    local arch_dir=""
+    local arch_binary_name=""
     local arch_name=""
-    arch_dir="$(resolve_arch_dir)" || { task_fail; error "Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
+    arch_binary_name="$(resolve_arch_binary_name)" || { task_fail; error "Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
     arch_name="$(resolve_arch_name)" || { task_fail; error "Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
     local os_family
     os_family="$(resolve_os_family)"
@@ -1045,11 +1041,9 @@ dry_run_preview() {
     info "  /var/log/xray"
 
     info "Would download files:"
-    info "  ${GITHUB_BINARY_BASE_URL}/${arch_dir}/xray -> /usr/local/bin/xray"
-    info "  ${GITHUB_BINARY_BASE_URL}/${arch_dir}/geoip.dat -> /usr/local/share/xray/geoip.dat"
-    info "  ${GITHUB_BINARY_BASE_URL}/${arch_dir}/geosite.dat -> /usr/local/share/xray/geosite.dat"
-    info "  ${GITHUB_BINARY_BASE_URL}/${arch_dir}/LICENSE -> /usr/local/share/xray/LICENSE"
-    info "  ${GITHUB_BINARY_BASE_URL}/${arch_dir}/README.md -> /usr/local/share/xray/README.md"
+    info "  ${GITHUB_RELEASE_BASE_URL}/${arch_binary_name} -> /usr/local/bin/xray"
+    info "  ${GITHUB_RELEASE_BASE_URL}/geoip.dat -> /usr/local/share/xray/geoip.dat"
+    info "  ${GITHUB_RELEASE_BASE_URL}/geosite.dat -> /usr/local/share/xray/geosite.dat"
 
     info "Would set permission:"
     info "  chmod 755 /usr/local/bin/xray"

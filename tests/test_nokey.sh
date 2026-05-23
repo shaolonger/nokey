@@ -50,11 +50,11 @@ extracted_public="$(extract_public_key_from_x25519_output "$keys_sample_spaced")
 pass "spaced label key extraction"
 
 # Test 5: architecture mapping helper
-[[ "$(resolve_arch_dir x86_64)" == "binary_amd64" ]] || fail "x86_64 should map to binary_amd64"
-[[ "$(resolve_arch_dir amd64)" == "binary_amd64" ]] || fail "amd64 should map to binary_amd64"
-[[ "$(resolve_arch_dir aarch64)" == "binary_arm64" ]] || fail "aarch64 should map to binary_arm64"
-[[ "$(resolve_arch_dir arm64)" == "binary_arm64" ]] || fail "arm64 should map to binary_arm64"
-if resolve_arch_dir mips >/dev/null 2>&1; then
+[[ "$(resolve_arch_binary_name x86_64)" == "xray_amd64" ]] || fail "x86_64 should map to xray_amd64"
+[[ "$(resolve_arch_binary_name amd64)" == "xray_amd64" ]] || fail "amd64 should map to xray_amd64"
+[[ "$(resolve_arch_binary_name aarch64)" == "xray_arm64" ]] || fail "aarch64 should map to xray_arm64"
+[[ "$(resolve_arch_binary_name arm64)" == "xray_arm64" ]] || fail "arm64 should map to xray_arm64"
+if resolve_arch_binary_name mips >/dev/null 2>&1; then
   fail "unsupported architecture should fail"
 fi
 pass "architecture mapping helper"
@@ -72,7 +72,9 @@ pass "os family helper"
 ID="alpine"
 ID_LIKE=""
 dry_run_out="$(dry_run_preview 2>&1 || true)"
-echo "$dry_run_out" | grep -Eq 'binary_(amd64|arm64)/xray -> /usr/local/bin/xray' || fail "dry-run should include xray download path"
+echo "$dry_run_out" | grep -Eq 'releases/download/latest/xray_(amd64|arm64) -> /usr/local/bin/xray' || fail "dry-run should include xray download path"
+[[ "$dry_run_out" == *"releases/download/latest/geoip.dat -> /usr/local/share/xray/geoip.dat"* ]] || fail "dry-run should include geoip.dat download path"
+[[ "$dry_run_out" == *"releases/download/latest/geosite.dat -> /usr/local/share/xray/geosite.dat"* ]] || fail "dry-run should include geosite.dat download path"
 [[ "$dry_run_out" == *"/etc/init.d/xray"* ]] || fail "dry-run alpine should include OpenRC path"
 pass "dry-run preview output"
 
