@@ -35,7 +35,7 @@
 # 🧑‍🍳 روش استفاده (با دسترسی root)
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)"
+curl -fsSL -o /usr/local/bin/nokey https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh && chmod +x /usr/local/bin/nokey && nokey
 ```
 
 ---
@@ -43,7 +43,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/ref
 # 🔍 پیش‌نمایش بدون تغییر سیستم (dry-run)
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)" @ --dry-run
+nokey --dry-run
 ```
 
 ---
@@ -51,7 +51,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/ref
 # 🧹 حذف
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)" @ --remove
+nokey --remove
 ```
 
 ---

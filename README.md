@@ -38,22 +38,27 @@
  
 1. 极速安装（在root下）
 ```
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)"
+curl -fsSL -o /usr/local/bin/nokey https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh && chmod +x /usr/local/bin/nokey && nokey
 ```
 
-2. 如果没有ipv4（纯v6的鸡），同时如果warp了ipv4的出口，此时要指定入口为v6，否则连不通（因为v4优先级比v6高）
+2. 查看帮助
 ```
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)" @ --netstack=6
-```
-
-3. 强制更新xray 和 geodata
-```
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)" @ --force
+nokey --help
 ```
 
-4. 仅预览安装流程（不修改系统）
+3. 如果没有ipv4（纯v6的鸡），同时如果warp了ipv4的出口，此时要指定入口为v6，否则连不通（因为v4优先级比v6高）
 ```
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)" @ --dry-run
+nokey --netstack=6
+```
+
+4. 强制更新xray 和 geodata
+```
+nokey --force
+```
+
+5. 仅预览安装流程（不修改系统）
+```
+nokey --dry-run
 ```
 
 错误难免，请多指教，我希望能做出适合所有linux版本的，但是自己财力有限，欢迎大佬借我机器调试
@@ -62,7 +67,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/ref
 ## 卸载
 
 ```
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)" @ --remove
+nokey --remove
 ```
 
 

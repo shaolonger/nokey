@@ -1211,6 +1211,6 @@ main() {
     echo -e "---------- ${cyan}live free or die hard${none} -------------" | tee -a "$LOG_FILE"
 }
 
-if [[ "${BASH_SOURCE[0]}" == "$0" ]] || [[ "$0" == "bash" ]]; then
+if [[ "${BASH_SOURCE[0]}" == "$0" ]] || [[ -n "${BASH_EXECUTION_STRING:-}" ]]; then
     main "$@"
 fi
