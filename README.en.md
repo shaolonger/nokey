@@ -13,6 +13,7 @@ No domain required. Perfect for both seasoned users who love tinkering and total
 Run a single command, sit back, and wait. No chatter, no fuss—super fast. Ready to race any other script 🚀 Speed is my specialty.
 
 > In testing, even a modest 1vCPU/1GB RAM VPS completed setup in under 20 seconds. Ideal for busy users.
+> Also verified to run on an Alpine pod with only 64MB RAM.
 
 ---
 
@@ -29,6 +30,20 @@ Run a single command, sit back, and wait. No chatter, no fuss—super fast. Read
 9. Outputs only minimal steps—detailed logs saved to a file  
 10. Generates QR codes  
 11. More features coming soon...
+
+---
+
+# 📦 Why binaries are downloaded from this repo
+
+`nokey.sh` downloads `xray_amd64/xray_arm64/geoip.dat/geosite.dat` from this repository's Releases instead of pulling and extracting official ZIP packages during install.
+
+Why:
+
+1. Lower CPU and RAM usage during install, which improves success rate on tiny instances (especially Alpine low-memory pods).
+2. Fewer external dependencies and a shorter install path.
+3. More controlled install inputs instead of executing a heavier install chain on the target host.
+
+These release assets are generated/synced by GitHub Actions. See: [`./.github/workflows/blank.yml`](.github/workflows/blank.yml).
 
 ---
 

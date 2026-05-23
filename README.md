@@ -16,6 +16,8 @@
 
 一个命令下去就等结果就好了，不罗嗦，不打扰，速度超快，敢和任何脚本PK ^-^ 输了告诉我，我再改进
 
+实测可在 Alpine Pod（64MB RAM）环境跑起来，适合超低内存场景。
+
 默认不带参数直接从新机器开始到装完BBR+FQ，魔改功能为
 1. 自动跳过不必要的系统环境更新
 2. 自动跳过不必要的geodata更新（--force参数可强制更新）
@@ -30,6 +32,16 @@
 11. 暂时想到这么多……
 
 > 已测试包括：ubuntu22/debian11/Rocky9.2/CentOS7.6/Fedora30/Alma9.2/alpine3.22，欢迎测试提issue或者报告成功结果
+
+## 为什么从本仓库下载二进制
+
+`nokey.sh` 默认从本仓库 Releases 下载 `xray_amd64/xray_arm64/geoip.dat/geosite.dat`，而不是安装时去官方仓库临时拉取并解压 ZIP。这样做的目的：
+
+1. 减少安装阶段的 CPU 和内存开销，提升低配机器成功率（尤其是 Alpine 小内存 Pod）。
+2. 降低外部依赖数量，让安装链路更短、更稳定。
+3. 保证安装输入可控，避免每次现场执行复杂安装脚本。
+
+这些发布文件由 GitHub Action 自动同步生成，流程见：[`./.github/workflows/blank.yml`](.github/workflows/blank.yml)。
 
 # 食用方式
 
