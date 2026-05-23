@@ -10,7 +10,7 @@ readonly GITHUB_URL="https://github.com/livingfree2023/nokey"
 readonly GITHUB_CMD="bash <(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)"
 readonly SERVICE_NAME="xray.service"
 readonly SERVICE_NAME_ALPINE="xray"
-readonly GITHUB_RELEASE_BASE_URL="https://github.com/livingfree2023/nokey/releases/download/latest"
+readonly GITHUB_RELEASE_BASE_URL="https://github.com/livingfree2023/nokey/releases/latest/download"
 readonly GITHUB_XRAY_RC_URL="https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/xray.rc"
 readonly GITHUB_XRAY_SERVICE_URL="https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/xray.service"
 

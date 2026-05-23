@@ -56,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          release_json="$(curl -sSL https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/latest || true)"
+          release_json="$(curl -sSL https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest || true)"
           current_body="$(printf '%s' "${release_json}" | jq -r '.body // ""' 2>/dev/null || true)"
           current_tag="$(printf '%s\n' "${current_body}" | grep '^Upstream-Tag:' | sed -E 's/^Upstream-Tag:[[:space:]]*//' || true)"
           current_sha_xray_amd64="$(printf '%s\n' "${current_body}" | grep '^SHA256-xray_amd64:' | sed -E 's/^SHA256-xray_amd64:[[:space:]]*//' || true)"
@@ -91,33 +91,12 @@ jobs:
         run: |
           echo "No upstream changes detected. Skip release update."
 
-      - name: Clean Existing Release Assets
-        if: steps.compare.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          release_json="$(curl -sSL https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/latest || true)"
-          release_id="$(printf '%s' "${release_json}" | jq -r '.id // empty' 2>/dev/null || true)"
-          if [ -n "${release_id:-}" ]; then
-            assets_json="$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets")"
-            asset_ids="$(printf '%s' "${assets_json}" | jq -r '.[] | select(.name | test("^(xray_(amd64|arm64)|geoip\\.dat|geosite\\.dat)$")) | .id' || true)"
-            for id in ${asset_ids}; do
-              # Some assets may occasionally return 422 when concurrently replaced; do not fail whole workflow.
-              code="$(curl -sS -o /dev/null -w "%{http_code}" -X DELETE -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/${id}")"
-              if [ "${code}" != "204" ] && [ "${code}" != "404" ] && [ "${code}" != "422" ]; then
-                echo "Failed to delete asset id=${id}, HTTP ${code}"
-                exit 1
-              fi
-            done
-          fi
-
       - name: Release and Upload
         if: steps.compare.outputs.changed == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: Latest Xray Binaries
+          tag_name: ${{ steps.upstream.outputs.upstream_tag }}
+          name: Xray Binaries ${{ steps.upstream.outputs.upstream_tag }}
           body: |
             Automatic sync with latest Xray-core release.
             Upstream-Tag: ${{ steps.upstream.outputs.upstream_tag }}
