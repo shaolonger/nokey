@@ -16,9 +16,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Create Binary Directory
-        run: ｜
+        run: |
           mkdir -p bin_dist
-        
 
       - name: Download and Extract AMD64 (x86_64) Binary
         run: |
