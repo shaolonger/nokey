@@ -2,7 +2,7 @@ name: Sync Latest Xray Binaries
 
 on:
   schedule:
-    - cron: '0 9 1 * *' 
+    - cron: '0 9 * * *'
   workflow_dispatch: # Allows you to manually trigger the workflow from the Actions tab
 
 permissions:
@@ -16,26 +16,109 @@ jobs:
         run: |
           mkdir -p "${RUNNER_TEMP}/bin_dist" "${RUNNER_TEMP}/xray_extract_amd64" "${RUNNER_TEMP}/xray_extract_arm64"
 
-      - name: Download and Extract AMD64 (x86_64) Binary
+      - name: Get Upstream Version and Download Artifacts
+        id: upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
+
+          # 1) Query latest upstream tag from XTLS/Xray-core
+          upstream_tag="$(curl -fsSL https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r '.tag_name')"
+          echo "upstream_tag=${upstream_tag}" >> "$GITHUB_OUTPUT"
+
+          # 2) Download and extract upstream binaries/geodata to temp dirs
           wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
           unzip -o Xray-linux-64.zip -d "${RUNNER_TEMP}/xray_extract_amd64"
           cp "${RUNNER_TEMP}/xray_extract_amd64"/xray "${RUNNER_TEMP}/bin_dist"/xray_amd64
           cp "${RUNNER_TEMP}/xray_extract_amd64"/geoip.dat "${RUNNER_TEMP}/bin_dist"/geoip.dat
           cp "${RUNNER_TEMP}/xray_extract_amd64"/geosite.dat "${RUNNER_TEMP}/bin_dist"/geosite.dat
 
-      - name: Download and Extract ARM64 (aarch64) Binary
-        run: |
-          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-arm64-v8a.zip 
+          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-arm64-v8a.zip
           unzip -o Xray-linux-arm64-v8a.zip -d "${RUNNER_TEMP}/xray_extract_arm64"
           cp "${RUNNER_TEMP}/xray_extract_arm64"/xray "${RUNNER_TEMP}/bin_dist"/xray_arm64
 
+          # 3) Create deterministic checksums from extracted artifacts
+          sha256sum "${RUNNER_TEMP}/bin_dist/xray_amd64" | awk '{print $1}' > "${RUNNER_TEMP}/sha_xray_amd64.txt"
+          sha256sum "${RUNNER_TEMP}/bin_dist/xray_arm64" | awk '{print $1}' > "${RUNNER_TEMP}/sha_xray_arm64.txt"
+          sha256sum "${RUNNER_TEMP}/bin_dist/geoip.dat" | awk '{print $1}' > "${RUNNER_TEMP}/sha_geoip.txt"
+          sha256sum "${RUNNER_TEMP}/bin_dist/geosite.dat" | awk '{print $1}' > "${RUNNER_TEMP}/sha_geosite.txt"
+
+          echo "sha_xray_amd64=$(cat "${RUNNER_TEMP}/sha_xray_amd64.txt")" >> "$GITHUB_OUTPUT"
+          echo "sha_xray_arm64=$(cat "${RUNNER_TEMP}/sha_xray_arm64.txt")" >> "$GITHUB_OUTPUT"
+          echo "sha_geoip=$(cat "${RUNNER_TEMP}/sha_geoip.txt")" >> "$GITHUB_OUTPUT"
+          echo "sha_geosite=$(cat "${RUNNER_TEMP}/sha_geosite.txt")" >> "$GITHUB_OUTPUT"
+
+      - name: Compare With Current Latest Release
+        id: compare
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          release_json="$(curl -sSL https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/latest || true)"
+          current_body="$(printf '%s' "${release_json}" | jq -r '.body // ""' 2>/dev/null || true)"
+          current_tag="$(printf '%s\n' "${current_body}" | grep '^Upstream-Tag:' | sed -E 's/^Upstream-Tag:[[:space:]]*//' || true)"
+          current_sha_xray_amd64="$(printf '%s\n' "${current_body}" | grep '^SHA256-xray_amd64:' | sed -E 's/^SHA256-xray_amd64:[[:space:]]*//' || true)"
+          current_sha_xray_arm64="$(printf '%s\n' "${current_body}" | grep '^SHA256-xray_arm64:' | sed -E 's/^SHA256-xray_arm64:[[:space:]]*//' || true)"
+          current_sha_geoip="$(printf '%s\n' "${current_body}" | grep '^SHA256-geoip.dat:' | sed -E 's/^SHA256-geoip.dat:[[:space:]]*//' || true)"
+          current_sha_geosite="$(printf '%s\n' "${current_body}" | grep '^SHA256-geosite.dat:' | sed -E 's/^SHA256-geosite.dat:[[:space:]]*//' || true)"
+
+          changed="false"
+          if [ "${current_tag}" != "${{ steps.upstream.outputs.upstream_tag }}" ]; then
+            changed="true"
+          fi
+          if [ "${current_sha_xray_amd64}" != "${{ steps.upstream.outputs.sha_xray_amd64 }}" ]; then
+            changed="true"
+          fi
+          if [ "${current_sha_xray_arm64}" != "${{ steps.upstream.outputs.sha_xray_arm64 }}" ]; then
+            changed="true"
+          fi
+          if [ "${current_sha_geoip}" != "${{ steps.upstream.outputs.sha_geoip }}" ]; then
+            changed="true"
+          fi
+          if [ "${current_sha_geosite}" != "${{ steps.upstream.outputs.sha_geosite }}" ]; then
+            changed="true"
+          fi
+
+          echo "changed=${changed}" >> "$GITHUB_OUTPUT"
+          echo "Current tag: ${current_tag:-<none>}"
+          echo "Upstream tag: ${{ steps.upstream.outputs.upstream_tag }}"
+          echo "Artifacts changed: ${changed}"
+
+      - name: Stop if no changes
+        if: steps.compare.outputs.changed != 'true'
+        run: |
+          echo "No upstream changes detected. Skip release update."
+
+      - name: Clean Existing Release Assets
+        if: steps.compare.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          release_json="$(curl -sSL https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/latest || true)"
+          release_id="$(printf '%s' "${release_json}" | jq -r '.id // empty' 2>/dev/null || true)"
+          if [ -n "${release_id:-}" ]; then
+            asset_ids="$(curl -fsSL https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets | jq -r '.[].id' || true)"
+            for id in ${asset_ids}; do
+              curl -fsSL -X DELETE -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/${id}" >/dev/null
+            done
+          fi
+
       - name: Release and Upload
+        if: steps.compare.outputs.changed == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Latest Xray Binaries
-          body: "Automatic sync with latest Xray-core release."
+          body: |
+            Automatic sync with latest Xray-core release.
+            Upstream-Tag: ${{ steps.upstream.outputs.upstream_tag }}
+            SHA256-xray_amd64: ${{ steps.upstream.outputs.sha_xray_amd64 }}
+            SHA256-xray_arm64: ${{ steps.upstream.outputs.sha_xray_arm64 }}
+            SHA256-geoip.dat: ${{ steps.upstream.outputs.sha_geoip }}
+            SHA256-geosite.dat: ${{ steps.upstream.outputs.sha_geosite }}
           files: |
             ${{ runner.temp }}/bin_dist/xray*
             ${{ runner.temp }}/bin_dist/geo*.dat
