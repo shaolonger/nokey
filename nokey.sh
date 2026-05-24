@@ -2,7 +2,7 @@
 
 # Constants and Configuration
 
-readonly SCRIPT_VERSION="2026.10" 
+readonly SCRIPT_VERSION="2026.11" 
 readonly LOG_FILE="nokey.log"
 readonly URL_FILE="nokey.url"
 readonly DEFAULT_DOMAIN="www.amd.com"
@@ -17,7 +17,6 @@ readonly GITHUB_XRAY_SERVICE_URL="https://raw.githubusercontent.com/livingfree20
 mldsa_enabled=0
 current_hostname=$(hostname)
 caddy_mode=0
-port_from_flag=0
 reality_dest_port=443  # default port for REALITY destination (not the inbound port)
 dry_run=0
 
@@ -30,9 +29,10 @@ readonly cyan='\e[96m'
 readonly none='\e[0m'
 
 
-# Initialize info file
-echo > "$LOG_FILE"
-echo > "$URL_FILE"
+init_output_files() {
+    : > "$LOG_FILE"
+    : > "$URL_FILE"
+}
 
 # Helper functions
 error() {
@@ -252,7 +252,7 @@ detect_caddy_config() {
         # - example.com:    (edge case: port without number - should reject)
         if [[ "$address_part" =~ ^\[([a-fA-F0-9:]+)\](:[0-9]+)?$ ]]; then
             # IPv6 in brackets, optional port
-            extracted_domain="[$BASH_REMATCH[1]]"
+            extracted_domain="[${BASH_REMATCH[1]}]"
             extracted_port="${BASH_REMATCH[2]:-443}"  # default 443 if no port
             extracted_port="${extracted_port#:}"  # remove leading colon
         elif [[ "$address_part" =~ ^([a-zA-Z0-9.*-]+)(:[0-9]+)?$ ]]; then
@@ -337,8 +337,7 @@ detect_caddy_config() {
             port_in_use=1
         fi
     else
-        (echo > /dev/tcp/127.0.0.1/$port) >/dev/null 2>&1
-        if [[ $? -eq 0 ]]; then
+        if (echo > /dev/tcp/127.0.0.1/"$port") >/dev/null 2>&1; then
             port_in_use=1
         fi
     fi
@@ -351,7 +350,7 @@ detect_caddy_config() {
                 is_xray=1
             fi
         elif command -v netstat >/dev/null 2>&1; then
-            if netstat -ltnp 2>/dev/null | grep -qE "[:.]$port($| )" | grep -q xray; then
+            if netstat -ltnp 2>/dev/null | grep -E "[:.]$port($| )" | grep -q xray; then
                 is_xray=1
             fi
         else
@@ -379,7 +378,7 @@ detect_caddy_config() {
             elif command -v netstat >/dev/null 2>&1; then
                 process_info=$(netstat -ltnp 2>/dev/null | grep -E "[:.]$port($| )" | head -n 1)
             elif command -v lsof >/dev/null 2>&1; then
-                process_info=$(lsof -i :$port 2>/dev/null | head -n 2)
+                process_info=$(lsof -i :"$port" 2>/dev/null | head -n 2)
             elif command -v pgrep >/dev/null 2>&1; then
                 process_info=$(pgrep -fl "$port" | head -n 1)
             fi
@@ -555,6 +554,7 @@ install_xray() {
         info "Installing systemd service: /etc/systemd/system/${SERVICE_NAME}"
         log_verbose "Downloading service file: ${GITHUB_XRAY_SERVICE_URL} -> ${xray_service_tmp}"
         curl -fSL "${GITHUB_XRAY_SERVICE_URL}" -o "${xray_service_tmp}" >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download xray.service"; exit 1; }
+        # shellcheck disable=SC2016
         sed -e 's/\$INSTALL_USER/nobody/g' \
             -e '/\${temp_CapabilityBoundingSet}/d' \
             -e '/\${temp_AmbientCapabilities}/d' \
@@ -572,13 +572,15 @@ install_xray() {
 }
 
 uninstall_in_alpine() {
-  rc-service "$SERVICE_NAME_ALPINE" stop        >> $LOG_FILE 2>&1
-  rc-update del "$SERVICE_NAME_ALPINE"          >> $LOG_FILE 2>&1
-  rm -rf "/usr/local/bin/xray"    >> $LOG_FILE 2>&1
-  rm -rf "/usr/local/share/xray"  >> $LOG_FILE 2>&1
-  rm -rf "/usr/local/etc/xray/"   >> $LOG_FILE 2>&1
-  rm -rf "/var/log/xray/"         >> $LOG_FILE 2>&1
-  rm -rf "/etc/init.d/$SERVICE_NAME_ALPINE"       >> $LOG_FILE 2>&1
+  {
+    rc-service "$SERVICE_NAME_ALPINE" stop
+    rc-update del "$SERVICE_NAME_ALPINE"
+    rm -rf "/usr/local/bin/xray"
+    rm -rf "/usr/local/share/xray"
+    rm -rf "/usr/local/etc/xray/"
+    rm -rf "/var/log/xray/"
+    rm -rf "/etc/init.d/$SERVICE_NAME_ALPINE"
+  } >> "$LOG_FILE" 2>&1
 }
 
 uninstall_xray() {
@@ -589,14 +591,16 @@ uninstall_xray() {
       info "\nAlpine OS: uninstall xray"
       uninstall_in_alpine
     else
-      systemctl stop "$SERVICE_NAME" >> "$LOG_FILE" 2>&1
-      systemctl disable "$SERVICE_NAME" >> "$LOG_FILE" 2>&1
-      rm -f /etc/systemd/system/"$SERVICE_NAME" >> "$LOG_FILE" 2>&1
-      systemctl daemon-reload >> "$LOG_FILE" 2>&1
-      rm -rf "/usr/local/bin/xray" >> "$LOG_FILE" 2>&1
-      rm -rf "/usr/local/share/xray" >> "$LOG_FILE" 2>&1
-      rm -rf "/usr/local/etc/xray/" >> "$LOG_FILE" 2>&1
-      rm -rf "/var/log/xray/" >> "$LOG_FILE" 2>&1
+      {
+        systemctl stop "$SERVICE_NAME"
+        systemctl disable "$SERVICE_NAME"
+        rm -f /etc/systemd/system/"$SERVICE_NAME"
+        systemctl daemon-reload
+        rm -rf "/usr/local/bin/xray"
+        rm -rf "/usr/local/share/xray"
+        rm -rf "/usr/local/etc/xray/"
+        rm -rf "/var/log/xray/"
+      } >> "$LOG_FILE" 2>&1
     fi 
 
     task_done
@@ -687,7 +691,10 @@ parse_args() {
           ;;
         --port=*)
           port="${arg#*=}"
-          port_from_flag=1
+          if ! [[ "$port" =~ ^[0-9]+$ ]] || (( port < 1 || port > 65535 )); then
+            error "错误: 端口必须是 1-65535 的数字 / Error: --port must be an integer between 1 and 65535"
+            show_help
+          fi
           ;;
         --domain=*)
           domain="${arg#*=}"
@@ -773,8 +780,7 @@ initialize_variables() {
       port_found=0
       for i in $(seq 0 1000); do
         port=$((base + i))
-        (echo > /dev/tcp/127.0.0.1/$port) >/dev/null 2>&1
-        if [[ $? -ne 0 ]]; then
+        if ! (echo > /dev/tcp/127.0.0.1/"$port") >/dev/null 2>&1; then
           port_found=1
           break
         fi
@@ -959,8 +965,7 @@ EOF
     config_dir=$(dirname "$config_path")
 
     if [[ ! -d "$config_dir" ]]; then
-        mkdir -p "$config_dir"
-        if [[ $? -ne 0 ]]; then
+        if ! mkdir -p "$config_dir"; then
             task_fail
             error "Failed to create config directory: $config_dir"
             exit 1
@@ -980,11 +985,11 @@ EOF
 restart_xray_service() {
     task_start "冲刺，开启服务 / Starting Service"
     if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
-        rc-service "$SERVICE_NAME_ALPINE" restart >> "$LOG_FILE" 2>&1
+        restart_cmd=(rc-service "$SERVICE_NAME_ALPINE" restart)
     else
-        systemctl restart "$SERVICE_NAME" >> "$LOG_FILE" 2>&1
+        restart_cmd=(systemctl restart "$SERVICE_NAME")
     fi
-    if [[ $? -ne 0 ]]; then
+    if ! "${restart_cmd[@]}" >> "$LOG_FILE" 2>&1; then
         task_fail
         error "Failed to restart xray service. Check $LOG_FILE for details."
         exit 1
@@ -1180,11 +1185,14 @@ main() {
     SECONDS=0
 
     if [ -f /etc/os-release ]; then
+        # shellcheck disable=SC1091
         . /etc/os-release
     else
         error "无法识别的OS / Cannot determine OS."
         exit 1
     fi
+
+    init_output_files
 
     show_banner
     echo -e "当前版本 / Version: ${cyan}${SCRIPT_VERSION}${none} " | tee -a "$LOG_FILE"
