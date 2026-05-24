@@ -19,6 +19,14 @@ current_hostname=$(hostname)
 caddy_mode=0
 reality_dest_port=443  # default port for REALITY destination (not the inbound port)
 dry_run=0
+keepconfig=0
+arg_port_set=0
+arg_domain_set=0
+arg_uuid_set=0
+arg_shortid_set=0
+arg_mldsa_set=0
+arg_mldsa65seed_set=0
+arg_mldsa65verify_set=0
 
 # Color definitions
 readonly red='\e[91m'
@@ -105,6 +113,69 @@ resolve_os_family() {
     else
         echo "debian/systemd-compatible"
     fi
+}
+
+sha256_file() {
+    local file_path="$1"
+    if [[ ! -f "$file_path" ]]; then
+        return 1
+    fi
+
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$file_path" | awk '{print $1}'
+        return 0
+    fi
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$file_path" | awk '{print $1}'
+        return 0
+    fi
+    return 1
+}
+
+fetch_release_sha256_map() {
+    local release_api_url="https://api.github.com/repos/livingfree2023/nokey/releases/latest"
+    local release_json=""
+    local release_body=""
+
+    release_json="$(curl -fsSL "$release_api_url" 2>>"$LOG_FILE")" || return 1
+
+    if command -v jq >/dev/null 2>&1; then
+        release_body="$(printf '%s' "$release_json" | jq -r '.body // ""')"
+    else
+        release_body="$(printf '%s' "$release_json" | tr -d '\n' | sed -E 's/.*"body":"(.*)","reactions":\{.*/\1/' | sed 's/\\r\\n/\n/g; s/\\"/"/g; s/\\\\/\\/g')"
+    fi
+
+    if [[ -z "$release_body" ]]; then
+        return 1
+    fi
+
+    REMOTE_SHA_XRAY_AMD64="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-xray_amd64:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
+    REMOTE_SHA_XRAY_ARM64="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-xray_arm64:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
+    REMOTE_SHA_GEOIP="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-geoip.dat:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
+    REMOTE_SHA_GEOSITE="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-geosite.dat:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
+
+    [[ -n "$REMOTE_SHA_XRAY_AMD64" || -n "$REMOTE_SHA_XRAY_ARM64" || -n "$REMOTE_SHA_GEOIP" || -n "$REMOTE_SHA_GEOSITE" ]]
+}
+
+download_if_sha_differs() {
+    local target_path="$1"
+    local remote_sha="$2"
+    local download_url="$3"
+    local label="$4"
+    local local_sha=""
+
+    if [[ -n "$remote_sha" && -f "$target_path" ]]; then
+        local_sha="$(sha256_file "$target_path" || true)"
+        if [[ -n "$local_sha" && "$local_sha" == "$remote_sha" ]]; then
+            info "Skip download: ${label} is up to date (sha256 matched)"
+            log_verbose "Skip download for ${label}: local sha256 matches release sha256 (${local_sha})"
+            return 0
+        fi
+    fi
+
+    log_verbose "Downloading: ${download_url} -> ${target_path}"
+    curl -fSL "$download_url" -o "$target_path" >> "$LOG_FILE" 2>&1 || return 1
+    return 0
 }
 
 check_root() {
@@ -452,7 +523,7 @@ install_dependencies() {
     task_start "开始准备工作 / Starting Preparation"
 
     #todo: "qrencode" should be a flag controlled feature
-    local tools=("curl" "netstat" "lsof")
+    local tools=("curl" "netstat" "lsof" "jq")
 
     declare -A os_package_command=(
         [apt]="apt install -y"
@@ -509,6 +580,131 @@ install_dependencies() {
 
 }
 
+initialize_ip_from_netstack() {
+    task_start "监测IP / Detect IP"
+    if [[ -z $netstack ]]; then
+        if [[ -n "$IPv4" ]]; then
+            netstack=4
+        elif [[ -n "$IPv6" ]]; then
+            netstack=6
+        else
+            error "没有获取到公共IP / No public IP detected"
+            exit 1
+        fi
+    fi
+
+    if [[ "$netstack" == "4" ]]; then
+        if [[ -z "$IPv4" ]]; then
+            error "用户指定IPv4，但未检测到IPv4公网地址 / netstack=4 selected but no public IPv4 detected"
+            exit 1
+        fi
+        ip=${IPv4}
+    elif [[ "$netstack" == "6" ]]; then
+        if [[ -z "$IPv6" ]]; then
+            error "用户指定IPv6，但未检测到IPv6公网地址 / netstack=6 selected but no public IPv6 detected"
+            exit 1
+        fi
+        ip=${IPv6}
+    else
+        error "错误: 无效的网络协议栈值 / Error: Invalid netstack value"
+        exit 1
+    fi
+    task_done_with_info "$ip"
+}
+
+validate_keepconfig_conflicts() {
+    if [[ $keepconfig -ne 1 ]]; then
+        return 0
+    fi
+
+    if [[ $arg_port_set -eq 1 || $arg_domain_set -eq 1 || $arg_uuid_set -eq 1 || $arg_shortid_set -eq 1 || $arg_mldsa_set -eq 1 || $arg_mldsa65seed_set -eq 1 || $arg_mldsa65verify_set -eq 1 ]]; then
+        error "Conflict: --keepconfig cannot be used with --port/--domain/--uuid/--shortid/--mldsa/--mldsa65Seed/--mldsa65Verify."
+        error "When --keepconfig is set, all runtime values are loaded from /usr/local/etc/xray/config.json."
+        exit 1
+    fi
+}
+
+load_runtime_vars_from_existing_config() {
+    local config_path="/usr/local/etc/xray/config.json"
+    local x25519_output=""
+
+    task_start "读取现有配置 / Load existing xray config"
+    if [[ ! -f "$config_path" ]]; then
+        task_fail
+        error "Missing config: $config_path. --keepconfig requires an existing config file."
+        exit 1
+    fi
+    if [[ ! -r "$config_path" ]]; then
+        task_fail
+        error "Config is not readable: $config_path"
+        exit 1
+    fi
+    if ! jq empty "$config_path" >/dev/null 2>&1; then
+        task_fail
+        error "Invalid JSON in $config_path. Please fix it or run without --keepconfig."
+        exit 1
+    fi
+
+    port="$(jq -r '.inbounds[0].port // empty' "$config_path")"
+    uuid="$(jq -r '.inbounds[0].settings.clients[0].id // empty' "$config_path")"
+    domain="$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0] // empty' "$config_path")"
+    shortid="$(jq -r '.inbounds[0].streamSettings.realitySettings.shortIds[0] // empty' "$config_path")"
+    private_key="$(jq -r '.inbounds[0].streamSettings.realitySettings.privateKey // empty' "$config_path")"
+    mldsa65Seed="$(jq -r '.inbounds[0].streamSettings.realitySettings.mldsa65Seed // empty' "$config_path")"
+    reality_dest="$(jq -r '.inbounds[0].streamSettings.realitySettings.dest // empty' "$config_path")"
+
+    if [[ -z "$domain" && -n "$reality_dest" ]]; then
+        # Fallback for configurations that only keep "dest".
+        if [[ "$reality_dest" =~ ^\[[^]]+\]:[0-9]+$ ]]; then
+            domain="${reality_dest%:*}"
+        elif [[ "$reality_dest" =~ ^[^:]+:[0-9]+$ ]]; then
+            domain="${reality_dest%:*}"
+        else
+            domain="$reality_dest"
+        fi
+    fi
+
+    if [[ "$reality_dest" =~ :([0-9]+)$ ]]; then
+        reality_dest_port="${BASH_REMATCH[1]}"
+    fi
+
+    if [[ -z "$port" || -z "$uuid" || -z "$domain" || -z "$shortid" || -z "$private_key" ]]; then
+        task_fail
+        error "Config missing required REALITY fields (port/uuid/domain/shortid/privateKey)."
+        exit 1
+    fi
+
+    x25519_output="$(xray x25519 -i "$private_key" 2>>"$LOG_FILE")"
+    if [[ -z "$x25519_output" ]]; then
+        task_fail
+        error "Failed to derive public key from existing private key using: xray x25519 -i <private_key>"
+        exit 1
+    fi
+
+    public_key="$(extract_public_key_from_x25519_output "$x25519_output")"
+    if [[ -z "$public_key" ]]; then
+        task_fail
+        error "Failed to parse public key from xray x25519 output."
+        exit 1
+    fi
+
+    if [[ -n "$mldsa65Seed" ]]; then
+        mldsa_enabled=1
+        local mldsa_output
+        mldsa_output="$(xray mldsa65 -i "$mldsa65Seed" 2>>"$LOG_FILE" || true)"
+        mldsa65Verify="$(echo "$mldsa_output" | awk '/Verify:/ {print $2}')"
+        if [[ -z "$mldsa65Verify" ]]; then
+            task_fail
+            error "Failed to derive mldsa65 verify key from mldsa65Seed in existing config."
+            exit 1
+        fi
+    else
+        mldsa_enabled=0
+        mldsa65Verify=""
+    fi
+    task_done_with_info "port=${port}, domain=${domain}, uuid=${uuid}"
+}
+
 install_xray() {
     if [[ $force_reinstall == 1 ]]; then
       uninstall_xray
@@ -527,12 +723,27 @@ install_xray() {
     log_verbose "Created install directories under /usr/local and /var/log/xray"
 
     info "Downloading xray binary and data files from GitHub Releases"
-    log_verbose "Downloading: ${GITHUB_RELEASE_BASE_URL}/${arch_binary_name} -> /usr/local/bin/xray"
-    curl -fSL "${GITHUB_RELEASE_BASE_URL}/${arch_binary_name}" -o /usr/local/bin/xray >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download ${arch_binary_name}"; exit 1; }
-    log_verbose "Downloading: ${GITHUB_RELEASE_BASE_URL}/geoip.dat -> /usr/local/share/xray/geoip.dat"
-    curl -fSL "${GITHUB_RELEASE_BASE_URL}/geoip.dat" -o /usr/local/share/xray/geoip.dat >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download geoip.dat"; exit 1; }
-    log_verbose "Downloading: ${GITHUB_RELEASE_BASE_URL}/geosite.dat -> /usr/local/share/xray/geosite.dat"
-    curl -fSL "${GITHUB_RELEASE_BASE_URL}/geosite.dat" -o /usr/local/share/xray/geosite.dat >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download geosite.dat"; exit 1; }
+
+    local remote_sha_xray=""
+    local remote_sha_geoip=""
+    local remote_sha_geosite=""
+    if fetch_release_sha256_map; then
+        if [[ "$arch_binary_name" == "xray_amd64" ]]; then
+            remote_sha_xray="$REMOTE_SHA_XRAY_AMD64"
+        else
+            remote_sha_xray="$REMOTE_SHA_XRAY_ARM64"
+        fi
+        remote_sha_geoip="$REMOTE_SHA_GEOIP"
+        remote_sha_geosite="$REMOTE_SHA_GEOSITE"
+        log_verbose "Fetched release checksums successfully for comparison"
+    else
+        warn "Failed to fetch release checksums; fallback to downloading files directly."
+        log_verbose "Failed to fetch/parse release checksum metadata from latest release"
+    fi
+
+    download_if_sha_differs "/usr/local/bin/xray" "$remote_sha_xray" "${GITHUB_RELEASE_BASE_URL}/${arch_binary_name}" "${arch_binary_name}" || { task_fail; error "Failed to download ${arch_binary_name}"; exit 1; }
+    download_if_sha_differs "/usr/local/share/xray/geoip.dat" "$remote_sha_geoip" "${GITHUB_RELEASE_BASE_URL}/geoip.dat" "geoip.dat" || { task_fail; error "Failed to download geoip.dat"; exit 1; }
+    download_if_sha_differs "/usr/local/share/xray/geosite.dat" "$remote_sha_geosite" "${GITHUB_RELEASE_BASE_URL}/geosite.dat" "geosite.dat" || { task_fail; error "Failed to download geosite.dat"; exit 1; }
     chmod 755 /usr/local/bin/xray
     log_verbose "Set executable permissions on /usr/local/bin/xray"
 
@@ -695,27 +906,37 @@ parse_args() {
             error "错误: 端口必须是 1-65535 的数字 / Error: --port must be an integer between 1 and 65535"
             show_help
           fi
+          arg_port_set=1
           ;;
         --domain=*)
           domain="${arg#*=}"
+          arg_domain_set=1
           ;;
         --uuid=*)
           uuid="${arg#*=}"
+          arg_uuid_set=1
           ;;
         --mldsa65Seed=*)
           mldsa65Seed="${arg#*=}"
+          arg_mldsa65seed_set=1
           ;;
         --mldsa65Verify=*)
           mldsa65Verify="${arg#*=}"
+          arg_mldsa65verify_set=1
           ;;
         --mldsa)
           mldsa_enabled=1
+          arg_mldsa_set=1
           ;;
         --caddy)
           caddy_mode=1
           ;;
         --shortid=*)
           shortid="${arg#*=}"
+          arg_shortid_set=1
+          ;;
+        --keepconfig)
+          keepconfig=1
           ;;
         --remove)
           remove_alias
@@ -733,6 +954,8 @@ parse_args() {
       esac
     done
 
+    validate_keepconfig_conflicts
+
 }
 
 
@@ -744,35 +967,7 @@ initialize_variables() {
         detect_caddy_config
     fi
 
-    task_start "监测IP / Detect IP"
-    if [[ -z $netstack ]]; then
-        if [[ -n "$IPv4" ]]; then
-            netstack=4
-        elif [[ -n "$IPv6" ]]; then
-            netstack=6
-        else
-            error "没有获取到公共IP / No public IP detected"
-            exit 1
-        fi
-    fi
-
-    if [[ "$netstack" == "4" ]]; then
-        if [[ -z "$IPv4" ]]; then
-            error "用户指定IPv4，但未检测到IPv4公网地址 / netstack=4 selected but no public IPv4 detected"
-            exit 1
-        fi
-        ip=${IPv4}
-    elif [[ "$netstack" == "6" ]]; then
-        if [[ -z "$IPv6" ]]; then
-            error "用户指定IPv6，但未检测到IPv6公网地址 / netstack=6 selected but no public IPv6 detected"
-            exit 1
-        fi
-        ip=${IPv6}
-    else
-        error "错误: 无效的网络协议栈值 / Error: Invalid netstack value"
-        exit 1
-    fi
-    task_done_with_info "$ip"
+    initialize_ip_from_netstack
 
     task_start "寻找一个无辜的端口 / Find a Random Unused Port"
     if [[ -z $port ]]; then      
@@ -997,9 +1192,16 @@ restart_xray_service() {
     task_done
 }
 configure_xray() {
-    initialize_variables
-    generate_crypto
-    build_xray_config
+    if [[ $keepconfig -eq 1 ]]; then
+        initialize_ip_from_netstack
+        info "Keeping existing config due to --keepconfig"
+        load_runtime_vars_from_existing_config
+        info "Skip config generation due to --keepconfig"
+    else
+        initialize_variables
+        generate_crypto
+        build_xray_config
+    fi
     restart_xray_service
 }
 
@@ -1017,6 +1219,7 @@ show_help() {
   echo "  --mldsa65Seed=STRING  设置ML-DSA-65私钥 (默认: 自动生成) / Set ML-DSA-65 private key"
   echo "  --mldsa65Verify=STRING  设置ML-DSA-65公钥 (默认: 自动生成) / Set ML-DSA-65 public key"
   echo "  --caddy            从运行的Caddy服务自动检测域名和端口 / Detect domain and port from Caddy service"
+  echo "  --keepconfig       保留现有配置并从中生成输出链接 / Keep existing config.json and generate links from it"
   echo "  --force            强制重装 / Force Reinstall"
   echo "  --remove           卸载Xray和NoKey / Uninstall Xray and NoKey"
   echo "  --dry-run          仅预览安装动作，不写入系统 / Preview actions only"
@@ -1068,8 +1271,14 @@ dry_run_preview() {
         info "  systemctl restart ${SERVICE_NAME} (after config generation)"
     fi
 
-    info "Would write config:"
-    info "  /usr/local/etc/xray/config.json"
+    if [[ $keepconfig -eq 1 ]]; then
+        info "Would keep existing config:"
+        info "  /usr/local/etc/xray/config.json"
+        info "Would parse existing config.json for URL output variables."
+    else
+        info "Would write config:"
+        info "  /usr/local/etc/xray/config.json"
+    fi
 
     task_done
 }
