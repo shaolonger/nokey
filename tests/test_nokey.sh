@@ -81,7 +81,33 @@ pass "dry-run preview output"
 # Test 8: BBR guard/message exists for readonly environments
 enable_bbr_source="$(declare -f enable_bbr)"
 [[ "$enable_bbr_source" == *'[[ ! -w /etc/sysctl.conf ]]'* ]] || fail "enable_bbr should check writable sysctl.conf"
-[[ "$enable_bbr_source" == *'Skip BBR: /etc/sysctl.conf is not writable'* ]] || fail "enable_bbr should expose clear skip message"
+[[ "$enable_bbr_source" == *'/etc/sysctl.conf is not writable'* ]] || fail "enable_bbr should expose clear skip message"
 pass "bbr readonly guard present"
+
+# Test 9: initialize_ip_from_netstack auto-detects IPv4 when IPv4/IPv6 empty
+ip=""
+IPv4=""
+IPv6=""
+netstack=""
+detect_network_interfaces() {
+    IPv4="203.0.113.10"
+}
+initialize_ip_from_netstack >/dev/null 2>&1 || fail "initialize_ip_from_netstack should trigger detection when IPv4/IPv6 empty"
+[[ -n "$ip" ]] || fail "ip should be set after fallback detection"
+[[ "$ip" == "203.0.113.10" ]] || fail "ip should match mock detection result"
+pass "netstack fallback detection"
+
+# Test 10: netstack=6 yields non-empty ip when IPv6 is present (defensive detection)
+netstack="6"
+ip=""
+IPv4=""
+IPv6="2001:db8::20"
+port="12348"
+domain="example.com"
+caddy_mode=0
+initialize_variables >/dev/null 2>&1 || fail "initialize_variables netstack=6 with IPv6"
+[[ -n "$ip" ]] || fail "ip should be non-empty when netstack=6 and IPv6 is present"
+[[ "$ip" == "$IPv6" ]] || fail "ip should match IPv6"
+pass "netstack=6 IP validation after detection"
 
 echo "All tests passed."

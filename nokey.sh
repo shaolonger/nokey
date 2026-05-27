@@ -167,7 +167,7 @@ download_if_sha_differs() {
     if [[ -n "$remote_sha" && -f "$target_path" ]]; then
         local_sha="$(sha256_file "$target_path" || true)"
         if [[ -n "$local_sha" && "$local_sha" == "$remote_sha" ]]; then
-            info "Skip download: ${label} is up to date (sha256 matched)"
+            info "跳过下载，${label} 已是最新 / Skip download: ${label} is up to date (sha256 matched)"
             log_verbose "Skip download for ${label}: local sha256 matches release sha256 (${local_sha})"
             return 0
         fi
@@ -183,7 +183,7 @@ check_root() {
         return
     fi
     if [ "$EUID" -ne 0 ]; then
-        error "Error: Please run as root / 错误: 请以root身份运行此脚本: ${red}sudo -i${none}"
+        error "请以root身份运行此脚本 / Please run as root: ${red}sudo -i${none}"
         exit 1
     fi
 }
@@ -222,13 +222,13 @@ remove_alias() {
         if [ -f "$file" ]; then
             if grep -Fxq "$alias_line" "$file"; then
                 sed -i.bak "/$(echo "$alias_line" | sed 's/[\/&]/\\&/g')/d" "$file"
-                echo "Removed alias from $file (backup created as $file.bak)"
+                echo "已从 $file 移除别名 (备份: $file.bak) / Removed alias from $file (backup created as $file.bak)"
             else
-                echo "Alias not found in $file"
+                echo "$file 中未找到别名 / Alias not found in $file"
             fi
         fi
     done
-    info "\nUninstallation complete."
+    info "\n卸载完成 / Uninstallation complete."
     task_done
 }
 
@@ -248,7 +248,7 @@ detect_caddy_config() {
     # Check if caddy is installed
     if ! command -v caddy > /dev/null 2>&1; then
         task_fail
-        error "Caddy is not installed. Please install Caddy first or run without --caddy flag."
+        error "没有安装Caddy，请先安装Caddy或不加--caddy运行 / Caddy is not installed. Please install Caddy first or run without --caddy flag."
         exit 1
     fi
 
@@ -273,7 +273,7 @@ detect_caddy_config() {
 
     if [[ $caddy_running -eq 0 ]]; then
         task_fail
-        error "Caddy is installed but not running. Please start Caddy service or run without --caddy flag."
+        error "Caddy已安装但未运行，请启动Caddy服务或不加--caddy运行 / Caddy is installed but not running. Please start Caddy service or run without --caddy flag."
         exit 1
     fi
 
@@ -289,7 +289,7 @@ detect_caddy_config() {
 
     if [[ -z "$caddyfile" ]]; then
         task_fail
-        error "Caddyfile not found in standard locations. Please ensure Caddyfile exists in /etc/caddy/ or /etc/."
+        error "没有在标准位置找到Caddyfile，请确保Caddyfile存在于 /etc/caddy/ 或 /etc/ / Caddyfile not found in standard locations. Please ensure Caddyfile exists in /etc/caddy/ or /etc/."
         exit 1
     fi
 
@@ -346,13 +346,13 @@ detect_caddy_config() {
 
     if [[ -z "$domain_line" ]] || [[ -z "$extracted_domain" ]]; then
         task_fail
-        error "Could not parse domain from Caddyfile. Ensure the first non-comment line is a valid address like 'example.com' or '[2001:db8::1]:8443'."
+        error "无法解析Caddyfile中的域名，请确保第一行非注释行是有效地址如 'example.com' 或 '[2001:db8::1]:8443' / Could not parse domain from Caddyfile. Ensure the first non-comment line is a valid address like 'example.com' or '[2001:db8::1]:8443'."
         exit 1
     fi
 
     # If user already specified a domain via --domain, respect it but inform about caddy override
     if [[ -n "$domain" ]]; then
-        info "User specified domain '$domain' via --domain flag. Using it (Caddyfile domain will be ignored)."
+        info "用户已通过--domain指定域名 '$domain'，将忽略Caddyfile中的域名 / User specified domain '$domain' via --domain flag. Using it (Caddyfile domain will be ignored)."
     else
         domain="$extracted_domain"
     fi
@@ -361,27 +361,27 @@ detect_caddy_config() {
     if [[ "${domain:0:2}" == "*." ]]; then
         # If not running in an interactive terminal, fail with instructions
         if [[ ! -t 0 ]]; then
-            error "Wildcard domain '$domain' detected and --domain not specified. Please provide a specific domain using --domain flag or run in interactive mode."
+            error "检测到泛域名 '$domain' 且未指定--domain，请通过--domain指定具体域名或在交互模式下运行 / Wildcard domain '$domain' detected and --domain not specified. Please provide a specific domain using --domain flag or run in interactive mode."
             exit 1
         fi
 
         # Interactive prompt
-        warn "Wildcard domain '$domain' is not supported by REALITY. REALITY requires explicit domain names for SNI matching."
+        warn "泛域名不适用于REALITY，REALITY需要明确的域名进行SNI匹配 / Wildcard domain '$domain' is not supported by REALITY. REALITY requires explicit domain names for SNI matching."
         while true; do
             read -r -p "Please enter a specific domain (e.g., example.com): " user_domain
             # Check for empty input
             if [[ -z "$user_domain" ]]; then
-                warn "Domain cannot be empty. Please try again."
+                warn "域名不能为空，请重试 / Domain cannot be empty. Please try again."
                 continue
             fi
             # Check for wildcard characters in user input
             if [[ "$user_domain" == *[*]* ]]; then
-                warn "Invalid domain: wildcard characters (*) are not allowed. Please enter a concrete domain name without '*'."
+                warn "域名无效，不能包含通配符*，请输入具体域名 / Invalid domain: wildcard characters (*) are not allowed. Please enter a concrete domain name without '*'."
                 continue
             fi
             # Accept the domain
             domain="$user_domain"
-            info "Using domain: ${domain}"
+            info "使用域名: ${domain} / Using domain: ${domain}"
             break
         done
     fi
@@ -391,7 +391,7 @@ detect_caddy_config() {
         # When using Caddy, default Xray inbound to 443 (if not user-specified)
         port=443
     else
-        info "User specified port '$port' via --port flag. Using it (Xray will bind to this port)."
+        info "用户已指定端口 '$port'，Xray将绑定到此端口 / User specified port '$port' via --port flag. Using it (Xray will bind to this port)."
     fi
 
     # When using Caddy, REALITY destination port is hardcoded to 8443
@@ -439,7 +439,7 @@ detect_caddy_config() {
         fi
 
         if [[ $is_xray -eq 1 ]]; then
-            info "Port $port is already in use by Xray. Will restart service after configuration."
+            info "端口 $port 已被Xray使用，配置后将重启服务 / Port $port is already in use by Xray. Will restart service after configuration."
         else
             task_fail
             # Identify which process is using the port (try ss, netstat, lsof, pgrep)
@@ -453,24 +453,24 @@ detect_caddy_config() {
             elif command -v pgrep >/dev/null 2>&1; then
                 process_info=$(pgrep -fl "$port" | head -n 1)
             fi
-            error "Port $port is occupied by another service. With --caddy flag, Xray must bind to port $port (default 443) to work with Caddy."
+            error "端口 $port 被占用，带--caddy参数时Xray必须绑定到端口 $port 才能与Caddy配合 / Port $port is occupied by another service. With --caddy flag, Xray must bind to port $port (default 443) to work with Caddy."
             if [[ -n "$process_info" ]]; then
-                error "Process using port $port:"
+                error "占用端口的进程 / Process using port $port:"
                 error "$process_info"
             else
-                error "No process information could be retrieved. Is another service using port 443?"
+                error "无法获取进程信息，是否其他服务占用了端口443？ / No process information could be retrieved. Is another service using port 443?"
             fi
-            error "Please stop the above service to free port $port, or reconfigure Caddy to use a different port."
+            error "请停用上述服务以释放端口 $port，或重新配置Caddy使用其他端口 / Please stop the above service to free port $port, or reconfigure Caddy to use a different port."
             exit 1
         fi
     fi
 
     task_done_with_info "domain=$domain, xray_port=$port, reality_dest_port=$reality_dest_port"
 
-    info "Caddy configuration detected:"
-    info "  - Domain/SNI: $cyan$domain$none"
-    info "  - Xray inbound port: $cyan$port$none"
-    info "  - REALITY destination: $cyan${domain}:${reality_dest_port}$none"
+    info "检测到Caddy配置 / Caddy configuration detected:"
+    info "  - 域名/SNI / Domain/SNI: $cyan$domain$none"
+    info "  - Xray入站端口 / Xray inbound port: $cyan$port$none"
+    info "  - REALITY目标 / REALITY destination: $cyan${domain}:${reality_dest_port}$none"
 }
 
 generate_uuid() {
@@ -556,7 +556,7 @@ install_dependencies() {
     # Check for missing tools
     for tool in "${tools[@]}"; do
         if ! command -v "$tool" > /dev/null 2>&1; then
-            info "$tool is missing, attempting to install."
+            info "缺少$tool，正在安装 / $tool is missing, attempting to install."
             # Map binary names to package names if different
             local package_name="$tool"
             case "$tool" in
@@ -570,7 +570,7 @@ install_dependencies() {
             eval "$install_cmd" "$package_name"  >> "$LOG_FILE" 2>&1
             if ! command -v "$tool" > /dev/null 2>&1; then
                 task_fail
-                error "Failed to install '$tool'. Please install it manually and re-run the script."
+                error "安装$tool失败，请手动安装后重新运行脚本 / Failed to install '$tool'. Please install it manually and re-run the script."
                 exit 1
             fi
         fi
@@ -582,6 +582,9 @@ install_dependencies() {
 
 initialize_ip_from_netstack() {
     task_start "监测IP / Detect IP"
+    if [[ -z "${IPv4:-}" && -z "${IPv6:-}" ]]; then
+        detect_network_interfaces
+    fi
     if [[ -z $netstack ]]; then
         if [[ -n "$IPv4" ]]; then
             netstack=4
@@ -618,8 +621,8 @@ validate_keepconfig_conflicts() {
     fi
 
     if [[ $arg_port_set -eq 1 || $arg_domain_set -eq 1 || $arg_uuid_set -eq 1 || $arg_shortid_set -eq 1 || $arg_mldsa_set -eq 1 || $arg_mldsa65seed_set -eq 1 || $arg_mldsa65verify_set -eq 1 ]]; then
-        error "Conflict: --keepconfig cannot be used with --port/--domain/--uuid/--shortid/--mldsa/--mldsa65Seed/--mldsa65Verify."
-        error "When --keepconfig is set, all runtime values are loaded from /usr/local/etc/xray/config.json."
+        error "冲突：--keepconfig不能与--port/--domain/--uuid/--shortid/--mldsa/--mldsa65Seed/--mldsa65Verify同时使用 / Conflict: --keepconfig cannot be used with --port/--domain/--uuid/--shortid/--mldsa/--mldsa65Seed/--mldsa65Verify."
+        error "使用--keepconfig时，所有运行参数将从/usr/local/etc/xray/config.json读取 / When --keepconfig is set, all runtime values are loaded from /usr/local/etc/xray/config.json."
         exit 1
     fi
 }
@@ -634,12 +637,12 @@ load_runtime_vars_from_existing_config() {
     task_start "读取现有配置 / Load existing xray config"
     if [[ ! -f "$config_path" ]]; then
         task_fail
-        error "Missing config: $config_path. --keepconfig requires an existing config file."
+        error "缺少配置文件: $config_path，--keepconfig需要现有配置文件 / Missing config: $config_path. --keepconfig requires an existing config file."
         exit 1
     fi
     if [[ ! -r "$config_path" ]]; then
         task_fail
-        error "Config is not readable: $config_path"
+        error "配置文件不可读 / Config is not readable: $config_path"
         exit 1
     fi
     if ! jq empty "$config_path" >/dev/null 2>/tmp/nokey-jq-raw.err; then
@@ -649,7 +652,7 @@ load_runtime_vars_from_existing_config() {
         # Config generated by this script may include // comments; strip them and retry.
         jsonc_tmp="$(mktemp /tmp/nokey-config-json.XXXXXX)" || {
             task_fail
-            error "Failed to create temporary file for JSONC parsing."
+            error "无法创建临时文件用于JSONC解析 / Failed to create temporary file for JSONC parsing."
             exit 1
         }
         sed -E 's@[[:space:]]+//.*$@@' "$config_path" > "$jsonc_tmp"
@@ -658,10 +661,10 @@ load_runtime_vars_from_existing_config() {
             local stripped_error=""
             stripped_error="$(cat /tmp/nokey-jq-stripped.err 2>/dev/null || true)"
             task_fail
-            error "Invalid config format in $config_path."
-            error "jq(raw): ${jq_error}"
-            error "jq(stripped-comments): ${stripped_error}"
-            error "Tip: remove syntax issues near the reported line/column. Showing nearby lines from original config:"
+            error "配置文件格式无效 / Invalid config format in $config_path."
+            error "jq(原始): ${jq_error}"
+            error "jq(去注释): ${stripped_error}"
+            error "提示：修复所报行附近的语法问题，下面是原始配置文件附近的行 / Tip: remove syntax issues near the reported line/column. Showing nearby lines from original config:"
 
             local line_no
             line_no="$(echo "$jq_error" | sed -nE 's/.*line ([0-9]+), column.*/\1/p' | head -n1)"
@@ -708,21 +711,21 @@ load_runtime_vars_from_existing_config() {
 
     if [[ -z "$port" || -z "$uuid" || -z "$domain" || -z "$shortid" || -z "$private_key" ]]; then
         task_fail
-        error "Config missing required REALITY fields (port/uuid/domain/shortid/privateKey)."
+        error "配置缺少必需的REALITY字段(port/uuid/domain/shortid/privateKey) / Config missing required REALITY fields (port/uuid/domain/shortid/privateKey)."
         exit 1
     fi
 
     x25519_output="$(xray x25519 -i "$private_key" 2>>"$LOG_FILE")"
     if [[ -z "$x25519_output" ]]; then
         task_fail
-        error "Failed to derive public key from existing private key using: xray x25519 -i <private_key>"
+        error "无法从现有私钥推导出公钥: xray x25519 -i <private_key> / Failed to derive public key from existing private key using: xray x25519 -i <private_key>"
         exit 1
     fi
 
     public_key="$(extract_public_key_from_x25519_output "$x25519_output")"
     if [[ -z "$public_key" ]]; then
         task_fail
-        error "Failed to parse public key from xray x25519 output."
+        error "无法从xray x25519输出解析公钥 / Failed to parse public key from xray x25519 output."
         exit 1
     fi
 
@@ -733,7 +736,7 @@ load_runtime_vars_from_existing_config() {
         mldsa65Verify="$(echo "$mldsa_output" | awk '/Verify:/ {print $2}')"
         if [[ -z "$mldsa65Verify" ]]; then
             task_fail
-            error "Failed to derive mldsa65 verify key from mldsa65Seed in existing config."
+            error "无法从现有配置中的mldsa65Seed推导出mldsa65验证密钥 / Failed to derive mldsa65 verify key from mldsa65Seed in existing config."
             exit 1
         fi
     else
@@ -753,15 +756,15 @@ install_xray() {
 
     local arch_binary_name=""
     local arch_name=""
-    arch_binary_name="$(resolve_arch_binary_name)" || { task_fail; error "Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
-    arch_name="$(resolve_arch_name)" || { task_fail; error "Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
+    arch_binary_name="$(resolve_arch_binary_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
+    arch_name="$(resolve_arch_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
 
-    info "Detected OS: $(resolve_os_family) | Architecture: ${arch_name}"
+    info "检测到系统 / Detected OS: $(resolve_os_family) | 架构 / Architecture: ${arch_name}"
 
-    mkdir -p /usr/local/bin /usr/local/share/xray /usr/local/etc/xray /var/log/xray || { task_fail; error "Failed to create xray directories"; exit 1; }
+    mkdir -p /usr/local/bin /usr/local/share/xray /usr/local/etc/xray /var/log/xray || { task_fail; error "创建xray目录失败 / Failed to create xray directories"; exit 1; }
     log_verbose "Created install directories under /usr/local and /var/log/xray"
 
-    info "Downloading xray binary and data files from GitHub Releases"
+    info "正在从GitHub Releases下载xray二进制文件 / Downloading xray binary and data files from GitHub Releases"
 
     local remote_sha_xray=""
     local remote_sha_geoip=""
@@ -776,44 +779,44 @@ install_xray() {
         remote_sha_geosite="$REMOTE_SHA_GEOSITE"
         log_verbose "Fetched release checksums successfully for comparison"
     else
-        warn "Failed to fetch release checksums; fallback to downloading files directly."
+        warn "获取Release校验和失败，回退到直接下载文件 / Failed to fetch release checksums; fallback to downloading files directly."
         log_verbose "Failed to fetch/parse release checksum metadata from latest release"
     fi
 
-    download_if_sha_differs "/usr/local/bin/xray" "$remote_sha_xray" "${GITHUB_RELEASE_BASE_URL}/${arch_binary_name}" "${arch_binary_name}" || { task_fail; error "Failed to download ${arch_binary_name}"; exit 1; }
-    download_if_sha_differs "/usr/local/share/xray/geoip.dat" "$remote_sha_geoip" "${GITHUB_RELEASE_BASE_URL}/geoip.dat" "geoip.dat" || { task_fail; error "Failed to download geoip.dat"; exit 1; }
-    download_if_sha_differs "/usr/local/share/xray/geosite.dat" "$remote_sha_geosite" "${GITHUB_RELEASE_BASE_URL}/geosite.dat" "geosite.dat" || { task_fail; error "Failed to download geosite.dat"; exit 1; }
+    download_if_sha_differs "/usr/local/bin/xray" "$remote_sha_xray" "${GITHUB_RELEASE_BASE_URL}/${arch_binary_name}" "${arch_binary_name}" || { task_fail; error "下载${arch_binary_name}失败 / Failed to download ${arch_binary_name}"; exit 1; }
+    download_if_sha_differs "/usr/local/share/xray/geoip.dat" "$remote_sha_geoip" "${GITHUB_RELEASE_BASE_URL}/geoip.dat" "geoip.dat" || { task_fail; error "下载geoip.dat失败 / Failed to download geoip.dat"; exit 1; }
+    download_if_sha_differs "/usr/local/share/xray/geosite.dat" "$remote_sha_geosite" "${GITHUB_RELEASE_BASE_URL}/geosite.dat" "geosite.dat" || { task_fail; error "下载geosite.dat失败 / Failed to download geosite.dat"; exit 1; }
     chmod 755 /usr/local/bin/xray
     log_verbose "Set executable permissions on /usr/local/bin/xray"
 
     local xray_rc_tmp
     local xray_service_tmp
-    xray_rc_tmp="$(mktemp /tmp/nokey.xray.rc.XXXXXX)" || { task_fail; error "Failed to create temporary file for xray.rc"; exit 1; }
-    xray_service_tmp="$(mktemp /tmp/nokey.xray.service.XXXXXX)" || { task_fail; error "Failed to create temporary file for xray.service"; exit 1; }
+    xray_rc_tmp="$(mktemp /tmp/nokey.xray.rc.XXXXXX)" || { task_fail; error "创建xray.rc临时文件失败 / Failed to create temporary file for xray.rc"; exit 1; }
+    xray_service_tmp="$(mktemp /tmp/nokey.xray.service.XXXXXX)" || { task_fail; error "创建xray.service临时文件失败 / Failed to create temporary file for xray.service"; exit 1; }
 
     if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
-        info "Installing OpenRC service: /etc/init.d/${SERVICE_NAME_ALPINE}"
+        info "安装OpenRC服务 / Installing OpenRC service: /etc/init.d/${SERVICE_NAME_ALPINE}"
         log_verbose "Downloading service file: ${GITHUB_XRAY_RC_URL} -> ${xray_rc_tmp}"
-        curl -fSL "${GITHUB_XRAY_RC_URL}" -o "${xray_rc_tmp}" >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download xray.rc"; exit 1; }
-        install -m 755 "${xray_rc_tmp}" /etc/init.d/"$SERVICE_NAME_ALPINE" >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to install /etc/init.d/$SERVICE_NAME_ALPINE"; exit 1; }
+        curl -fSL "${GITHUB_XRAY_RC_URL}" -o "${xray_rc_tmp}" >> "$LOG_FILE" 2>&1 || { task_fail; error "下载xray.rc失败 / Failed to download xray.rc"; exit 1; }
+        install -m 755 "${xray_rc_tmp}" /etc/init.d/"$SERVICE_NAME_ALPINE" >> "$LOG_FILE" 2>&1 || { task_fail; error "安装/etc/init.d/$SERVICE_NAME_ALPINE失败 / Failed to install /etc/init.d/$SERVICE_NAME_ALPINE"; exit 1; }
         rm -f "${xray_rc_tmp}" >> "$LOG_FILE" 2>&1
         log_verbose "Installed OpenRC service file from xray.rc"
-        rc-update add "$SERVICE_NAME_ALPINE" >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to enable OpenRC service $SERVICE_NAME_ALPINE"; exit 1; }
+        rc-update add "$SERVICE_NAME_ALPINE" >> "$LOG_FILE" 2>&1 || { task_fail; error "启用OpenRC服务$SERVICE_NAME_ALPINE失败 / Failed to enable OpenRC service $SERVICE_NAME_ALPINE"; exit 1; }
         log_verbose "Enabled OpenRC service: $SERVICE_NAME_ALPINE"
     else
-        info "Installing systemd service: /etc/systemd/system/${SERVICE_NAME}"
+        info "安装systemd服务 / Installing systemd service: /etc/systemd/system/${SERVICE_NAME}"
         log_verbose "Downloading service file: ${GITHUB_XRAY_SERVICE_URL} -> ${xray_service_tmp}"
-        curl -fSL "${GITHUB_XRAY_SERVICE_URL}" -o "${xray_service_tmp}" >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to download xray.service"; exit 1; }
+        curl -fSL "${GITHUB_XRAY_SERVICE_URL}" -o "${xray_service_tmp}" >> "$LOG_FILE" 2>&1 || { task_fail; error "下载xray.service失败 / Failed to download xray.service"; exit 1; }
         # shellcheck disable=SC2016
         sed -e 's/\$INSTALL_USER/nobody/g' \
             -e '/\${temp_CapabilityBoundingSet}/d' \
             -e '/\${temp_AmbientCapabilities}/d' \
             -e '/\${temp_NoNewPrivileges}/d' \
-            "${xray_service_tmp}" > /etc/systemd/system/"$SERVICE_NAME" || { task_fail; error "Failed to write /etc/systemd/system/$SERVICE_NAME"; exit 1; }
+            "${xray_service_tmp}" > /etc/systemd/system/"$SERVICE_NAME" || { task_fail; error "写入/etc/systemd/system/$SERVICE_NAME失败 / Failed to write /etc/systemd/system/$SERVICE_NAME"; exit 1; }
         rm -f "${xray_service_tmp}" >> "$LOG_FILE" 2>&1
         log_verbose "Installed systemd service file from xray.service"
-        systemctl daemon-reload >> "$LOG_FILE" 2>&1 || { task_fail; error "systemctl daemon-reload failed"; exit 1; }
-        systemctl enable "$SERVICE_NAME" >> "$LOG_FILE" 2>&1 || { task_fail; error "Failed to enable systemd service $SERVICE_NAME"; exit 1; }
+        systemctl daemon-reload >> "$LOG_FILE" 2>&1 || { task_fail; error "systemctl daemon-reload失败 / systemctl daemon-reload failed"; exit 1; }
+        systemctl enable "$SERVICE_NAME" >> "$LOG_FILE" 2>&1 || { task_fail; error "启用systemd服务$SERVICE_NAME失败 / Failed to enable systemd service $SERVICE_NAME"; exit 1; }
         log_verbose "Enabled systemd service: $SERVICE_NAME"
     fi
 
@@ -838,7 +841,7 @@ uninstall_xray() {
     task_start "什么？要卸载重装？ / Force Reinstall"
     
     if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
-      info "\nAlpine OS: uninstall xray"
+      info "\nAlpine系统：卸载xray / Alpine OS: uninstall xray"
       uninstall_in_alpine
     else
       {
@@ -863,13 +866,13 @@ enable_bbr() {
 
     # Some VPS/container environments do not expose writable sysctl knobs.
     if [[ ! -w /etc/sysctl.conf ]]; then
-        task_done_with_info "Skip BBR: /etc/sysctl.conf is not writable"
+        task_done_with_info "跳过BBR：/etc/sysctl.conf不可写 / Skip BBR: /etc/sysctl.conf is not writable"
         log_verbose "Skip BBR: /etc/sysctl.conf is not writable"
         return
     fi
 
     if [[ ! -e /proc/sys/net/ipv4/tcp_congestion_control ]]; then
-        task_done_with_info "Skip BBR: kernel does not expose tcp_congestion_control"
+        task_done_with_info "跳过BBR：内核未暴露tcp_congestion_control / Skip BBR: kernel does not expose tcp_congestion_control"
         log_verbose "Skip BBR: /proc/sys/net/ipv4/tcp_congestion_control not found"
         return
     fi
@@ -888,7 +891,7 @@ enable_bbr() {
     if sysctl -p >> "$LOG_FILE" 2>&1; then
         task_done
     else
-        task_done_with_info "Skip BBR apply: sysctl not permitted in this environment"
+        task_done_with_info "跳过BBR生效：此环境不允许sysctl / Skip BBR apply: sysctl not permitted in this environment"
         log_verbose "Skip BBR apply: sysctl -p failed (likely container/readonly procfs)"
     fi
 
@@ -909,9 +912,9 @@ show_banner() {
 
 
 
-    echo "项目地址，欢迎点点点点星 / STAR ME PLEEEEEAAAASE "
+    echo "项目地址，欢迎点点点点星 / STAR ME PLEEEEEAAAASE"
     echo -e "${cyan}$GITHUB_URL${none}"
-    echo -e "本脚本支持带参数执行, 不带参数将直接无敌 / See ${cyan}--help${none} for parameters"
+    echo -e "支持带参数执行，不带参数直接无敌 / Supports parameters, no params just works — see ${cyan}--help${none}"
 
 }
 
@@ -987,7 +990,7 @@ parse_args() {
           dry_run=1
           ;;
         *)
-          error "Unknown option / 什么鬼参数: $arg"
+          error "什么鬼参数: $arg / Unknown option: $arg"
           show_help
           ;;
       esac
@@ -1021,7 +1024,7 @@ initialize_variables() {
       done
       if [[ $port_found -eq 0 ]]; then
         task_fail
-        error "Could not find an unused port."
+        error "没有找到可用端口 / Could not find an unused port."
         exit 1
       fi
       # info "\n找到一个空闲随机端口，如果有防火墙需要放行 / Random unused port found, if firewall enabled, add tcp rules for: ${cyan}$port${none}"
@@ -1048,14 +1051,14 @@ generate_crypto() {
       keys=$(xray x25519)
       if [[ -z "$keys" ]]; then
         task_fail
-        error "Failed to generate x25519 keys. Is xray installed correctly?"
+        error "生成x25519密钥失败，xray是否安装正确？ / Failed to generate x25519 keys. Is xray installed correctly?"
         exit 1
       fi
       task_start "生成一个私钥 / Generate Private Key"
       private_key=$(extract_private_key_from_x25519_output "$keys")
       if [[ -z "$private_key" ]]; then
         task_fail
-        error "Failed to parse PrivateKey from x25519 output."
+        error "无法从x25519输出解析私钥 / Failed to parse PrivateKey from x25519 output."
         exit 1
       fi
       task_done_with_info "${private_key}"
@@ -1063,7 +1066,7 @@ generate_crypto() {
       public_key=$(extract_public_key_from_x25519_output "$keys")
       if [[ -z "$public_key" ]]; then
         task_fail
-        error "Failed to parse PublicKey from x25519 output."
+        error "无法从x25519输出解析公钥 / Failed to parse PublicKey from x25519 output."
         exit 1
       fi
       task_done_with_info "${public_key}"
@@ -1083,7 +1086,7 @@ generate_crypto() {
         mldsa65keys=$(xray mldsa65)
         if [[ -z "$mldsa65keys" ]]; then
           task_fail
-          error "Failed to generate ML-DSA-65 keys. Is xray installed correctly?"
+          error "生成ML-DSA-65密钥失败，xray是否安装正确？ / Failed to generate ML-DSA-65 keys. Is xray installed correctly?"
           exit 1
         fi
         mldsa65Seed=$(echo "$mldsa65keys" | awk '/Seed:/ {print $2}')
@@ -1198,16 +1201,16 @@ EOF
     if [[ ! -d "$config_dir" ]]; then
         if ! mkdir -p "$config_dir"; then
             task_fail
-            error "Failed to create config directory: $config_dir"
+            error "创建配置目录失败: $config_dir / Failed to create config directory: $config_dir"
             exit 1
         fi
     fi
     
     if ! echo "$reality_template" > "$config_path"; then
         task_fail
-        error "Failed to write xray config to $config_path."
+        error "写入xray配置文件失败: $config_path / Failed to write xray config to $config_path."
         [[ -f "$config_path" ]] && rm -f "$config_path"
-        error "Partial config file removed. Check permissions, disk space, and $LOG_FILE for details."
+        error "已删除不完整的配置文件，请检查权限、磁盘空间和$LOG_FILE获取详情 / Partial config file removed. Check permissions, disk space, and $LOG_FILE for details."
         exit 1
     fi
     task_done
@@ -1222,7 +1225,7 @@ restart_xray_service() {
     fi
     if ! "${restart_cmd[@]}" >> "$LOG_FILE" 2>&1; then
         task_fail
-        error "Failed to restart xray service. Check $LOG_FILE for details."
+        error "重启xray服务失败，请查看$LOG_FILE获取详情 / Failed to restart xray service. Check $LOG_FILE for details."
         exit 1
     fi
     task_done
@@ -1230,9 +1233,9 @@ restart_xray_service() {
 configure_xray() {
     if [[ $keepconfig -eq 1 ]]; then
         initialize_ip_from_netstack
-        info "Keeping existing config due to --keepconfig"
+        info "将保留现有配置 --keepconfig / Keeping existing config due to --keepconfig"
         load_runtime_vars_from_existing_config
-        info "Skip config generation due to --keepconfig"
+        info "跳过配置生成 --keepconfig / Skip config generation due to --keepconfig"
     else
         initialize_variables
         generate_crypto
@@ -1265,41 +1268,41 @@ show_help() {
 }
 
 dry_run_preview() {
-    task_start "Dry Run / 预览安装流程"
+    task_start "预览安装流程 / Dry Run"
 
     local arch_binary_name=""
     local arch_name=""
-    arch_binary_name="$(resolve_arch_binary_name)" || { task_fail; error "Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
-    arch_name="$(resolve_arch_name)" || { task_fail; error "Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
+    arch_binary_name="$(resolve_arch_binary_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
+    arch_name="$(resolve_arch_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
     local os_family
     os_family="$(resolve_os_family)"
 
-    info "Dry run mode enabled: no file/service/system changes will be made."
-    info "Detected OS: ${os_family} | Architecture: ${arch_name}"
+    info "预览模式：不会对系统做任何实际更改 / Dry run mode enabled: no file/service/system changes will be made."
+    info "检测到系统 / Detected OS: ${os_family} | 架构 / Architecture: ${arch_name}"
     log_verbose "DRY RUN | OS=${os_family} ARCH=${arch_name}"
 
-    info "Would create directories:"
+    info "将创建目录 / Would create directories:"
     info "  /usr/local/bin"
     info "  /usr/local/share/xray"
     info "  /usr/local/etc/xray"
     info "  /var/log/xray"
 
-    info "Would download files:"
+    info "将下载文件 / Would download files:"
     info "  ${GITHUB_RELEASE_BASE_URL}/${arch_binary_name} -> /usr/local/bin/xray"
     info "  ${GITHUB_RELEASE_BASE_URL}/geoip.dat -> /usr/local/share/xray/geoip.dat"
     info "  ${GITHUB_RELEASE_BASE_URL}/geosite.dat -> /usr/local/share/xray/geosite.dat"
 
-    info "Would set permission:"
+    info "将设置权限 / Would set permission:"
     info "  chmod 755 /usr/local/bin/xray"
 
     if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
-        info "Would install service (OpenRC):"
+        info "将安装服务(OpenRC) / Would install service (OpenRC):"
         info "  ${GITHUB_XRAY_RC_URL} -> /tmp/nokey.xray.rc.<pid>"
         info "  /tmp/nokey.xray.rc.<pid> -> /etc/init.d/${SERVICE_NAME_ALPINE}"
         info "  rc-update add ${SERVICE_NAME_ALPINE}"
         info "  rc-service ${SERVICE_NAME_ALPINE} restart (after config generation)"
     else
-        info "Would install service (systemd):"
+        info "将安装服务(systemd) / Would install service (systemd):"
         info "  ${GITHUB_XRAY_SERVICE_URL} -> /tmp/nokey.xray.service.<pid>"
         info "  /tmp/nokey.xray.service.<pid> -> /etc/systemd/system/${SERVICE_NAME}"
         info "  systemctl daemon-reload"
@@ -1308,11 +1311,11 @@ dry_run_preview() {
     fi
 
     if [[ $keepconfig -eq 1 ]]; then
-        info "Would keep existing config:"
+        info "将保留现有配置 / Would keep existing config:"
         info "  /usr/local/etc/xray/config.json"
-        info "Would parse existing config.json for URL output variables."
+        info "将解析现有config.json以生成输出链接 / Would parse existing config.json for URL output variables."
     else
-        info "Would write config:"
+        info "将写入配置 / Would write config:"
         info "  /usr/local/etc/xray/config.json"
     fi
 
@@ -1329,7 +1332,7 @@ check_service_status() {
       else
         error "[服务未运行 / Service is not active]" 
         rc-service "$SERVICE_NAME_ALPINE" status | tee -a "$LOG_FILE"
-        error "运行详细记录在 $LOG_FILE / See complete logs"
+        error "详细日志记录在 $LOG_FILE / See complete logs"
         exit 1
       fi
     else
@@ -1338,7 +1341,7 @@ check_service_status() {
       else
         error "服务未运行 / Service is not active" 
         systemctl status "$SERVICE_NAME" | tee -a "$LOG_FILE"
-        error "运行详细记录在 $LOG_FILE / See complete logs"
+        error "详细日志记录在 $LOG_FILE / See complete logs"
         exit 1
       fi
     fi
@@ -1351,12 +1354,12 @@ generate_share_links() {
     
     vless_reality_url_short="vless://${uuid}@${ip}:${port}?flow=xtls-rprx-vision&encryption=none&type=tcp&security=reality&sni=${domain}&fp=${fingerprint}&pbk=${public_key}&sid=${shortid}#${current_hostname}"
 
-    info "Share Link:"
+    info "分享链接 / Share Link:"
     
     if [[ $mldsa_enabled == 1 ]]; then
       vless_reality_mldsa_url="vless://${uuid}@${ip}:${port}?flow=xtls-rprx-vision&encryption=none&type=tcp&security=reality&sni=${domain}&fp=${fingerprint}&pbk=${public_key}&sid=${shortid}&pqv=${mldsa65Verify}&#${current_hostname}"
       echo -e "${magenta}${vless_reality_mldsa_url}${none}"  | tee -a "$LOG_FILE" | tee -a "$URL_FILE"
-      info "Without mldsa:"
+      info "不含mldsa / Without mldsa:"
       echo -e "${magenta}${vless_reality_url_short}${none}"  | tee -a "$LOG_FILE" | tee -a "$URL_FILE"
     else
       echo -e "${magenta}${vless_reality_url_short}${none}"  | tee -a "$LOG_FILE" | tee -a "$URL_FILE"
@@ -1387,7 +1390,7 @@ generate_clash_config() {
     uuid: ${uuid}
 EOF
 )
-    info "Clash.meta 配置 / Clash.meta config block:"
+    info "Clash.meta 配置 / Clash.meta config:"
     echo -e "${cyan}${clash_meta_config}${none}" | tee -a "$LOG_FILE" | tee -a "$URL_FILE"
 }
 
@@ -1414,7 +1417,7 @@ output_results() {
     #   info "mldsa65Verify = ${cyan}${mldsa65Verify}${none}"
     # fi
 
-    info "${yellow}二维码生成命令: / For QR code, install qrencode and run: ${none} qrencode -t UTF8 -r $URL_FILE" | tee -a "$LOG_FILE"
+    info "${yellow}二维码生成命令：安装qrencode后运行 / For QR code, install qrencode and run: ${none} qrencode -t UTF8 -r $URL_FILE" | tee -a "$LOG_FILE"
 
     check_service_status
     
@@ -1444,6 +1447,8 @@ main() {
     parse_args "$@"
 
     if [[ $dry_run -eq 1 ]]; then
+        detect_network_interfaces
+        initialize_ip_from_netstack
         dry_run_preview
         exit 0
     fi
@@ -1460,7 +1465,7 @@ main() {
     output_results
     info "总用时 / Elapsed Time:  ${green}$SECONDS 秒${none}"
     # info "日志文件 / Log File:  ${green}$LOG_FILE${none}"
-    info "下次可以直接用别名${cyan}nokey${none}启动本脚本最新版"
+    info "下次可以直接用别名${cyan}nokey${none}启动本脚本最新版 / Next time just run ${cyan}nokey${none} to use the latest version"
     echo -e "---------- ${cyan}live free or die hard${none} -------------" | tee -a "$LOG_FILE"
 }
 
