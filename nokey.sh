@@ -126,12 +126,24 @@ resolve_os_family() {
 }
 
 resolve_realm_arch_name() {
+    local use_musl=0
+    if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
+        use_musl=1
+    fi
     case "${1:-$(uname -m)}" in
         x86_64|amd64)
-            echo "realm_amd64"
+            if [[ $use_musl -eq 1 ]]; then
+                echo "realm_musl_amd64"
+            else
+                echo "realm_amd64"
+            fi
             ;;
         aarch64|arm64)
-            echo "realm_arm64"
+            if [[ $use_musl -eq 1 ]]; then
+                echo "realm_musl_arm64"
+            else
+                echo "realm_arm64"
+            fi
             ;;
         *)
             return 1
@@ -179,8 +191,10 @@ fetch_release_sha256_map() {
     REMOTE_SHA_GEOSITE="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-geosite.dat:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
     REMOTE_SHA_REALM_AMD64="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-realm_amd64:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
     REMOTE_SHA_REALM_ARM64="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-realm_arm64:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
+    REMOTE_SHA_REALM_MUSL_AMD64="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-realm_musl_amd64:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
+    REMOTE_SHA_REALM_MUSL_ARM64="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-realm_musl_arm64:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
 
-    [[ -n "$REMOTE_SHA_XRAY_AMD64" || -n "$REMOTE_SHA_XRAY_ARM64" || -n "$REMOTE_SHA_GEOIP" || -n "$REMOTE_SHA_GEOSITE" || -n "$REMOTE_SHA_REALM_AMD64" || -n "$REMOTE_SHA_REALM_ARM64" ]]
+    [[ -n "$REMOTE_SHA_XRAY_AMD64" || -n "$REMOTE_SHA_XRAY_ARM64" || -n "$REMOTE_SHA_GEOIP" || -n "$REMOTE_SHA_GEOSITE" || -n "$REMOTE_SHA_REALM_AMD64" || -n "$REMOTE_SHA_REALM_ARM64" || -n "$REMOTE_SHA_REALM_MUSL_AMD64" || -n "$REMOTE_SHA_REALM_MUSL_ARM64" ]]
 }
 
 download_if_sha_differs() {
@@ -1342,7 +1356,11 @@ install_realm() {
 
     local remote_sha=""
     if fetch_release_sha256_map; then
-        if [[ "$arch_binary_name" == "realm_amd64" ]]; then
+        if [[ "$arch_binary_name" == "realm_musl_amd64" ]]; then
+            remote_sha="$REMOTE_SHA_REALM_MUSL_AMD64"
+        elif [[ "$arch_binary_name" == "realm_musl_arm64" ]]; then
+            remote_sha="$REMOTE_SHA_REALM_MUSL_ARM64"
+        elif [[ "$arch_binary_name" == "realm_amd64" ]]; then
             remote_sha="$REMOTE_SHA_REALM_AMD64"
         else
             remote_sha="$REMOTE_SHA_REALM_ARM64"
@@ -1504,6 +1522,9 @@ dry_run_preview() {
         info "${green}=== Realm 转发代理 / Realm Relay Proxy ===${none}"
         if [[ $realm_only -eq 1 ]]; then
             info "模式: 仅Realm (不安装Xray) / Mode: Realm only (no Xray)"
+        fi
+        if [[ "$realm_arch_name" == *musl* ]]; then
+            info "链接: musl (Alpine兼容) / Link: musl (Alpine-compatible)"
         fi
         info "远程地址 / Remote: ${cyan}${realm_remote}${none}"
         if [[ -n "$realm_listen" ]]; then
