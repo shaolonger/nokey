@@ -148,7 +148,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.upstream.outputs.upstream_tag }}-${{ steps.upstream.outputs.realm_tag }}
-          name: nokey ${{ steps.upstream.outputs.upstream_tag }} (realm ${{ steps.upstream.outputs.realm_tag }})
+          name: xray ${{ steps.upstream.outputs.upstream_tag }} realm ${{ steps.upstream.outputs.realm_tag }}
           body: |
             Automatic sync with latest Xray-core release.
             Upstream-Tag: ${{ steps.upstream.outputs.upstream_tag }}
