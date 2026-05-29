@@ -29,8 +29,9 @@ Run a single command, sit back, and wait. No chatter, no fuss—super fast. Read
 8. Shows help with `--help`  
 9. Outputs only minimal steps—detailed logs saved to a file  
 10. Generates QR codes  
-11. `--realm` mode — installs Realm relay proxy (`--remote` required, `--listen` optional)  
-12. More features coming soon...
+11. `--realm` mode — installs Realm relay proxy alongside Xray (`--remote` required, `--listen` optional)
+12. `--realm-only` mode — installs Realm relay proxy only (without Xray)
+13. More features coming soon...
 
 ---
 
@@ -66,8 +67,9 @@ nokey --dry-run
 
 # 🔁 Realm relay proxy
 
+### Scenario 1 — Install Xray + Realm (both)
 ```bash
-# Forward remote 1.2.3.4:443 locally, auto-listen on 0.0.0.0:443
+# Install Xray and Realm, forward local 443 to 1.2.3.4:443
 nokey --realm --remote 1.2.3.4:443
 
 # With custom listen address
@@ -77,13 +79,23 @@ nokey --realm --remote 1.2.3.4:443 --listen 0.0.0.0:8080
 nokey --netstack=6 --realm --remote [2001:db8::1]:443
 ```
 
+### Scenario 2 — Install Xray only (default, no flags needed)
+```bash
+nokey
+```
+
+### Scenario 3 — Install Realm only (without Xray)
+```bash
+nokey --realm-only --remote 1.2.3.4:443
+```
+
 ---
 
 # 🧹 Uninstall
 
 ```bash
-nokey --remove           # uninstall Xray
-nokey --realm --remove   # uninstall Realm
+nokey --remove              # uninstall Xray (also Realm if installed)
+nokey --realm-only --remove  # uninstall Realm only
 ```
 
 ---

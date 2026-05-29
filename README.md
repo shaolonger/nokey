@@ -29,8 +29,9 @@
 8. 可查看帮助 --help
 9. 只输出极简步骤，详细log输出到log文件
 10. 支持X25519
-11. 支持--realm模式安装Realm转发代理（用--remote指定目标地址，--listen可选）
-12. 暂时想到这么多……
+11. 支持`--realm`模式安装Realm转发代理（用`--remote`指定目标地址，`--listen`可选）
+12. 支持`--realm-only`模式仅安装Realm（不安装Xray）
+13. 暂时想到这么多……
 
 > 已测试包括：ubuntu22/debian11/Rocky9.2/CentOS7.6/Fedora30/Alma9.2/alpine3.22，欢迎测试提issue或者报告成功结果
 
@@ -74,19 +75,26 @@ nokey --force
 nokey --dry-run
 ```
 
-6. 安装Realm转发代理（把远程端口1.2.3.4:443转发到本地，自动监听0.0.0.0:443）
+### 场景一：安装Xray + Realm（同时安装两者）
 ```
+# 安装Xray和Realm，把本地443转发到1.2.3.4:443
 nokey --realm --remote 1.2.3.4:443
-```
 
-7. 安装Realm并指定监听地址
-```
+# 指定Realm监听地址
 nokey --realm --remote 1.2.3.4:443 --listen 0.0.0.0:8080
+
+# Realm走IPv6
+nokey --netstack=6 --realm --remote [2001:db8::1]:443
 ```
 
-8. Realm走IPv6
+### 场景二：只安装Xray（默认，不带任何参数）
 ```
-nokey --netstack=6 --realm --remote [2001:db8::1]:443
+nokey
+```
+
+### 场景三：只安装Realm转发代理（不安装Xray）
+```
+nokey --realm-only --remote 1.2.3.4:443
 ```
 
 错误难免，请多指教，我希望能做出适合所有linux版本的，但是自己财力有限，欢迎大佬借我机器调试
@@ -95,8 +103,8 @@ nokey --netstack=6 --realm --remote [2001:db8::1]:443
 ## 卸载
 
 ```
-nokey --remove           # 卸载Xray
-nokey --realm --remove   # 卸载Realm
+nokey --remove              # 卸载Xray (如果有Realm也一起卸载)
+nokey --realm-only --remove  # 仅卸载Realm
 ```
 
 
