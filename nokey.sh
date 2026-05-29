@@ -1464,20 +1464,47 @@ REALMCFG
 
 restart_realm_service() {
     task_start "启动 Realm 服务 / Starting Realm Service"
+    local max_retries=3
+    local retry=0
     if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
-        if ! rc-service "$REALM_SERVICE_NAME_ALPINE" restart >> "$LOG_FILE" 2>&1; then
-            task_fail
-            error "重启Realm服务失败，请查看$LOG_FILE获取详情 / Failed to restart realm service. Check $LOG_FILE for details."
-            exit 1
-        fi
+        while [ $retry -lt $max_retries ]; do
+            if rc-service "$REALM_SERVICE_NAME_ALPINE" stop >> "$LOG_FILE" 2>&1; then
+                sleep 1
+            fi
+            if rc-service "$REALM_SERVICE_NAME_ALPINE" start >> "$LOG_FILE" 2>&1; then
+                sleep 1
+                if rc-service "$REALM_SERVICE_NAME_ALPINE" status >> "$LOG_FILE" 2>&1; then
+                    task_done
+                    return 0
+                fi
+            fi
+            retry=$((retry + 1))
+            if [ $retry -lt $max_retries ]; then
+                warn "重启Realm服务失败，正在重试 ($retry/$max_retries) ... / Failed to restart realm service, retrying ($retry/$max_retries) ..."
+                sleep 2
+                rm -f /run/openrc/starting/"$REALM_SERVICE_NAME_ALPINE" /run/openrc/exclusive/"$REALM_SERVICE_NAME_ALPINE" 2>/dev/null
+            fi
+        done
+        task_fail
+        error "重启Realm服务失败，请查看$LOG_FILE获取详情 / Failed to restart realm service. Check $LOG_FILE for details."
+        exit 1
     else
-        if ! systemctl restart "$REALM_SERVICE_NAME" >> "$LOG_FILE" 2>&1; then
-            task_fail
-            error "重启Realm服务失败，请查看$LOG_FILE获取详情 / Failed to restart realm service. Check $LOG_FILE for details."
-            exit 1
-        fi
+        local retry=0
+        while [ $retry -lt $max_retries ]; do
+            if systemctl restart "$REALM_SERVICE_NAME" >> "$LOG_FILE" 2>&1; then
+                task_done
+                return 0
+            fi
+            retry=$((retry + 1))
+            if [ $retry -lt $max_retries ]; then
+                warn "重启Realm服务失败，正在重试 ($retry/$max_retries) ... / Failed to restart realm service, retrying ($retry/$max_retries) ..."
+                sleep 2
+            fi
+        done
+        task_fail
+        error "重启Realm服务失败，请查看$LOG_FILE获取详情 / Failed to restart realm service. Check $LOG_FILE for details."
+        exit 1
     fi
-    task_done
 }
 
 

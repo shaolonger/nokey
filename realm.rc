@@ -6,6 +6,7 @@ description="Realm proxy relay"
 command="/usr/local/bin/realm"
 command_args="-c /usr/local/etc/realm/config.json"
 command_user="nobody"
+command_background=true
 pidfile="/run/${RC_SVCNAME}.pid"
 
 depend() {
