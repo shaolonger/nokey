@@ -1,0 +1,14 @@
+[Unit]
+Description=Realm proxy relay
+After=network.target
+
+[Service]
+Type=simple
+User=nobody
+ExecStart=/usr/local/bin/realm -c /usr/local/etc/realm/config.json
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

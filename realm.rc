@@ -1,0 +1,13 @@
+#!/sbin/openrc-run
+
+name="realm"
+description="Realm proxy relay"
+
+command="/usr/local/bin/realm"
+command_args="-c /usr/local/etc/realm/config.json"
+command_user="nobody"
+pidfile="/run/${RC_SVCNAME}.pid"
+
+depend() {
+	need net
+}
