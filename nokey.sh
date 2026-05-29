@@ -761,8 +761,8 @@ install_xray() {
 
     info "检测到系统 / Detected OS: $(resolve_os_family) | 架构 / Architecture: ${arch_name}"
 
-    mkdir -p /usr/local/bin /usr/local/share/xray /usr/local/etc/xray /var/log/xray || { task_fail; error "创建xray目录失败 / Failed to create xray directories"; exit 1; }
-    log_verbose "Created install directories under /usr/local and /var/log/xray"
+    mkdir -p /usr/local/bin /usr/local/share/xray /usr/local/etc/xray || { task_fail; error "创建xray目录失败 / Failed to create xray directories"; exit 1; }
+    log_verbose "Created install directories under /usr/local"
 
     info "正在从GitHub Releases下载xray二进制文件 / Downloading xray binary and data files from GitHub Releases"
 
@@ -831,7 +831,6 @@ uninstall_in_alpine() {
     rm -rf "/usr/local/bin/xray"
     rm -rf "/usr/local/share/xray"
     rm -rf "/usr/local/etc/xray/"
-    rm -rf "/var/log/xray/"
     rm -rf "/etc/init.d/$SERVICE_NAME_ALPINE"
   } >> "$LOG_FILE" 2>&1
 }
@@ -852,7 +851,6 @@ uninstall_xray() {
         rm -rf "/usr/local/bin/xray"
         rm -rf "/usr/local/share/xray"
         rm -rf "/usr/local/etc/xray/"
-        rm -rf "/var/log/xray/"
       } >> "$LOG_FILE" 2>&1
     fi 
 
@@ -1111,8 +1109,8 @@ build_xray_config() {
     reality_template=$(cat <<-EOF
       { 
         "log": {
-          "access": "/var/log/xray/access.log",
-          "error": "/var/log/xray/error.log",
+          "access": "/tmp/xray_access.log",
+          "error": "/tmp/xray_error.log",
           "loglevel": "warning"
         },
         "inbounds": [
@@ -1285,7 +1283,6 @@ dry_run_preview() {
     info "  /usr/local/bin"
     info "  /usr/local/share/xray"
     info "  /usr/local/etc/xray"
-    info "  /var/log/xray"
 
     info "将下载文件 / Would download files:"
     info "  ${GITHUB_RELEASE_BASE_URL}/${arch_binary_name} -> /usr/local/bin/xray"
