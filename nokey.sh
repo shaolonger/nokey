@@ -34,6 +34,7 @@ arg_mldsa65seed_set=0
 arg_mldsa65verify_set=0
 
 realm_mode=0
+realm_only=0
 realm_remote=""
 realm_listen=""
 
@@ -999,6 +1000,10 @@ parse_args() {
         --realm)
           realm_mode=1
           ;;
+        --realm-only)
+          realm_mode=1
+          realm_only=1
+          ;;
         --remote=*)
           realm_remote="${arg#*=}"
           ;;
@@ -1016,7 +1021,8 @@ parse_args() {
           remove_alias
           if [[ $realm_mode -eq 1 ]]; then
             uninstall_realm
-          else
+          fi
+          if [[ $realm_only -ne 1 ]]; then
             uninstall_xray
           fi
           info "卸载完成 / Uninstallation complete ... [${green}OK${none}]"
@@ -1263,6 +1269,9 @@ EOF
         exit 1
     fi
     task_done
+
+    info "--- ${config_path} ---"
+    cat "$config_path" | tee -a "$LOG_FILE"
 }
 
 restart_xray_service() {
@@ -1430,6 +1439,9 @@ REALMCFG
     fi
 
     task_done_with_info "listen=${realm_listen}, remote=${realm_remote}"
+
+    info "--- ${realm_config} ---"
+    cat "$realm_config" | tee -a "$LOG_FILE"
 }
 
 restart_realm_service() {
@@ -1466,10 +1478,11 @@ show_help() {
   echo "  --caddy            从运行的Caddy服务自动检测域名和端口 / Detect domain and port from Caddy service"
   echo "  --keepconfig       保留现有配置并从中生成输出链接 / Keep existing config.json and generate links from it"
   echo "  --force            强制重装 / Force Reinstall"
-  echo "  --realm            安装Realm转发代理 (与 --remote 搭配) / Install Realm relay proxy (use with --remote)"
+  echo "  --realm            额外安装Realm转发代理 (与 --remote 搭配) / Also install Realm relay proxy alongside Xray (use with --remote)"
+  echo "  --realm-only      仅安装Realm转发代理 (不安装Xray, 与 --remote 搭配) / Install Realm relay proxy only (without Xray, use with --remote)"
   echo "  --remote=ADDRESS   设置Realm远程地址 (必填, 格式 host:port) / Set Realm remote address (required, format host:port)"
   echo "  --listen=ADDRESS   设置Realm监听地址 (可选, 默认派生自远程端口) / Set Realm listen address (optional, defaults to remote port on any address)"
-  echo "  --remove           卸载Xray/Realm和NoKey / Uninstall Xray/Realm and NoKey"
+  echo "  --remove           卸载Xray (和已安装的Realm) 与NoKey / Uninstall Xray (and Realm if installed) and NoKey"
   echo "  --dry-run          仅预览安装动作，不写入系统 / Preview actions only"
   echo "  --help             显示此帮助信息 / Show this help message"
 
@@ -1488,8 +1501,10 @@ dry_run_preview() {
     if [[ $realm_mode -eq 1 ]]; then
         local realm_arch_name=""
         realm_arch_name="$(resolve_realm_arch_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
-        info "模式: Realm转发代理 / Mode: Realm relay proxy"
-        info "架构 / Architecture: $(resolve_arch_name)"
+        info "${green}=== Realm 转发代理 / Realm Relay Proxy ===${none}"
+        if [[ $realm_only -eq 1 ]]; then
+            info "模式: 仅Realm (不安装Xray) / Mode: Realm only (no Xray)"
+        fi
         info "远程地址 / Remote: ${cyan}${realm_remote}${none}"
         if [[ -n "$realm_listen" ]]; then
             info "监听地址 / Listen: ${cyan}${realm_listen}${none}"
@@ -1498,7 +1513,6 @@ dry_run_preview() {
         fi
 
         info "将创建目录 / Would create directories:"
-        info "  /usr/local/bin"
         info "  ${REALM_CONFIG_DIR}"
 
         info "将下载文件 / Would download files:"
@@ -1522,7 +1536,12 @@ dry_run_preview() {
 
         info "将写入配置 / Would write config:"
         info "  ${REALM_CONFIG_DIR}/config.json"
+        info ""
+    fi
 
+    info "${green}=== Xray (VLESS Reality) ===${none}"
+    if [[ $realm_only -eq 1 ]]; then
+        info "跳过Xray安装: --realm-only 模式 / Skipping Xray: --realm-only mode"
         task_done
         return
     fi
@@ -1578,25 +1597,50 @@ dry_run_preview() {
 check_service_status() {
     task_start "检查服务状态 / Checking Service"
 
+    if [[ $realm_mode -eq 1 ]]; then
+        if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
+            if ! rc-service "$REALM_SERVICE_NAME_ALPINE" status >> "$LOG_FILE" 2>&1; then
+                error "Realm服务未运行 / Realm service is not active"
+                rc-service "$REALM_SERVICE_NAME_ALPINE" status | tee -a "$LOG_FILE"
+                error "详细日志记录在 $LOG_FILE / See complete logs"
+                exit 1
+            fi
+        else
+            if ! systemctl is-active --quiet "$REALM_SERVICE_NAME"; then
+                error "Realm服务未运行 / Realm service is not active"
+                systemctl status "$REALM_SERVICE_NAME" | tee -a "$LOG_FILE"
+                error "详细日志记录在 $LOG_FILE / See complete logs"
+                exit 1
+            fi
+        fi
+    fi
+
+    if [[ $realm_only -eq 1 ]]; then
+        task_done
+        return
+    fi
+
     if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
       if rc-service "$SERVICE_NAME_ALPINE" status >> "$LOG_FILE" 2>&1; then 
-          task_done
+          info "Xray服务运行中 / Xray is running"
       else
-        error "[服务未运行 / Service is not active]" 
+        error "Xray服务未运行 / Xray service is not active" 
         rc-service "$SERVICE_NAME_ALPINE" status | tee -a "$LOG_FILE"
         error "详细日志记录在 $LOG_FILE / See complete logs"
         exit 1
       fi
     else
       if systemctl is-active --quiet "$SERVICE_NAME"; then
-        task_done
+        info "Xray服务运行中 / Xray is running"
       else
-        error "服务未运行 / Service is not active" 
+        error "Xray服务未运行 / Xray service is not active" 
         systemctl status "$SERVICE_NAME" | tee -a "$LOG_FILE"
         error "详细日志记录在 $LOG_FILE / See complete logs"
         exit 1
       fi
     fi
+
+    task_done
 }
 
 generate_share_links() {
@@ -1715,13 +1759,16 @@ main() {
         install_realm
         configure_realm
         restart_realm_service
-    else
+    fi
+
+    if [[ $realm_only -ne 1 ]]; then
         install_xray
         configure_xray
         enable_bbr
         add_alias_if_missing
-        output_results
     fi
+
+    output_results
     info "总用时 / Elapsed Time:  ${green}$SECONDS 秒${none}"
     # info "日志文件 / Log File:  ${green}$LOG_FILE${none}"
     info "下次可以直接用别名${cyan}nokey${none}启动本脚本最新版 / Next time just run ${cyan}nokey${none} to use the latest version"
