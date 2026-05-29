@@ -13,6 +13,11 @@ readonly SERVICE_NAME_ALPINE="xray"
 readonly GITHUB_RELEASE_BASE_URL="https://github.com/livingfree2023/nokey/releases/latest/download"
 readonly GITHUB_XRAY_RC_URL="https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/xray.rc"
 readonly GITHUB_XRAY_SERVICE_URL="https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/xray.service"
+readonly GITHUB_REALM_RC_URL="https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/realm.rc"
+readonly GITHUB_REALM_SERVICE_URL="https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/realm.service"
+readonly REALM_SERVICE_NAME="realm.service"
+readonly REALM_SERVICE_NAME_ALPINE="realm"
+readonly REALM_CONFIG_DIR="/usr/local/etc/realm"
 
 mldsa_enabled=0
 current_hostname=$(hostname)
@@ -27,6 +32,10 @@ arg_shortid_set=0
 arg_mldsa_set=0
 arg_mldsa65seed_set=0
 arg_mldsa65verify_set=0
+
+realm_mode=0
+realm_remote=""
+realm_listen=""
 
 # Color definitions
 readonly red='\e[91m'
@@ -115,6 +124,20 @@ resolve_os_family() {
     fi
 }
 
+resolve_realm_arch_name() {
+    case "${1:-$(uname -m)}" in
+        x86_64|amd64)
+            echo "realm_amd64"
+            ;;
+        aarch64|arm64)
+            echo "realm_arm64"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 sha256_file() {
     local file_path="$1"
     if [[ ! -f "$file_path" ]]; then
@@ -153,8 +176,10 @@ fetch_release_sha256_map() {
     REMOTE_SHA_XRAY_ARM64="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-xray_arm64:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
     REMOTE_SHA_GEOIP="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-geoip.dat:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
     REMOTE_SHA_GEOSITE="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-geosite.dat:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
+    REMOTE_SHA_REALM_AMD64="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-realm_amd64:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
+    REMOTE_SHA_REALM_ARM64="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-realm_arm64:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
 
-    [[ -n "$REMOTE_SHA_XRAY_AMD64" || -n "$REMOTE_SHA_XRAY_ARM64" || -n "$REMOTE_SHA_GEOIP" || -n "$REMOTE_SHA_GEOSITE" ]]
+    [[ -n "$REMOTE_SHA_XRAY_AMD64" || -n "$REMOTE_SHA_XRAY_ARM64" || -n "$REMOTE_SHA_GEOIP" || -n "$REMOTE_SHA_GEOSITE" || -n "$REMOTE_SHA_REALM_AMD64" || -n "$REMOTE_SHA_REALM_ARM64" ]]
 }
 
 download_if_sha_differs() {
@@ -971,6 +996,15 @@ parse_args() {
         --caddy)
           caddy_mode=1
           ;;
+        --realm)
+          realm_mode=1
+          ;;
+        --remote=*)
+          realm_remote="${arg#*=}"
+          ;;
+        --listen=*)
+          realm_listen="${arg#*=}"
+          ;;
         --shortid=*)
           shortid="${arg#*=}"
           arg_shortid_set=1
@@ -980,7 +1014,11 @@ parse_args() {
           ;;
         --remove)
           remove_alias
-          uninstall_xray
+          if [[ $realm_mode -eq 1 ]]; then
+            uninstall_realm
+          else
+            uninstall_xray
+          fi
           info "卸载完成 / Uninstallation complete ... [${green}OK${none}]"
           exit 0
           ;;
@@ -995,6 +1033,19 @@ parse_args() {
     done
 
     validate_keepconfig_conflicts
+
+    if [[ $realm_mode -eq 1 ]]; then
+        if [[ -z "$realm_remote" ]]; then
+            error "错误: --realm 模式下 --remote 是必填项 / Error: --remote is required when using --realm."
+            error "用法: --realm --remote <host:port> [--listen <host:port>] / Usage: --realm --remote <host:port> [--listen <host:port>]"
+            show_help
+        fi
+        # Validate --remote format: must contain a colon + port
+        if ! [[ "$realm_remote" =~ ^\[?[^\]]*\]?:[0-9]+$ ]]; then
+            error "错误: --remote 格式无效，应为 <host>:<port> (例如 1.2.3.4:443) / Error: Invalid --remote format. Expected <host>:<port> (e.g., 1.2.3.4:443)."
+            exit 1
+        fi
+    fi
 
 }
 
@@ -1243,6 +1294,163 @@ configure_xray() {
 }
 
 
+# ---- Realm functions ----
+
+uninstall_realm() {
+    task_start "卸载 Realm / Uninstall Realm"
+    {
+        if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
+            rc-service "$REALM_SERVICE_NAME_ALPINE" stop 2>/dev/null || true
+            rc-update del "$REALM_SERVICE_NAME_ALPINE" 2>/dev/null || true
+            rm -f "/etc/init.d/$REALM_SERVICE_NAME_ALPINE"
+        else
+            systemctl stop "$REALM_SERVICE_NAME" 2>/dev/null || true
+            systemctl disable "$REALM_SERVICE_NAME" 2>/dev/null || true
+            rm -f "/etc/systemd/system/$REALM_SERVICE_NAME" 2>/dev/null || true
+            systemctl daemon-reload 2>/dev/null || true
+        fi
+        rm -f /usr/local/bin/realm
+        rm -rf "$REALM_CONFIG_DIR"
+    } >> "$LOG_FILE" 2>&1
+    task_done
+}
+
+install_realm() {
+    if [[ $force_reinstall == 1 ]]; then
+        uninstall_realm
+    fi
+
+    task_start "安装 Realm / Install Realm"
+
+    local arch_binary_name=""
+    local arch_name=""
+    arch_binary_name="$(resolve_realm_arch_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
+    arch_name="$(resolve_arch_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
+
+    info "架构 / Architecture: ${arch_name}"
+
+    mkdir -p /usr/local/bin "$REALM_CONFIG_DIR" || { task_fail; error "创建Realm目录失败 / Failed to create realm directories"; exit 1; }
+
+    local remote_sha=""
+    if fetch_release_sha256_map; then
+        if [[ "$arch_binary_name" == "realm_amd64" ]]; then
+            remote_sha="$REMOTE_SHA_REALM_AMD64"
+        else
+            remote_sha="$REMOTE_SHA_REALM_ARM64"
+        fi
+    else
+        warn "获取Release校验和失败，回退到直接下载文件 / Failed to fetch release checksums; fallback to downloading files directly."
+    fi
+
+    download_if_sha_differs "/usr/local/bin/realm" "$remote_sha" "${GITHUB_RELEASE_BASE_URL}/${arch_binary_name}" "${arch_binary_name}" || { task_fail; error "下载${arch_binary_name}失败 / Failed to download ${arch_binary_name}"; exit 1; }
+    chmod 755 /usr/local/bin/realm
+
+    local realm_rc_tmp
+    local realm_service_tmp
+    realm_rc_tmp="$(mktemp /tmp/nokey.realm.rc.XXXXXX)" || { task_fail; error "创建realm.rc临时文件失败 / Failed to create temporary file for realm.rc"; exit 1; }
+    realm_service_tmp="$(mktemp /tmp/nokey.realm.service.XXXXXX)" || { task_fail; error "创建realm.service临时文件失败 / Failed to create temporary file for realm.service"; exit 1; }
+
+    if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
+        info "安装OpenRC服务 / Installing OpenRC service: /etc/init.d/${REALM_SERVICE_NAME_ALPINE}"
+        log_verbose "Downloading service file: ${GITHUB_REALM_RC_URL} -> ${realm_rc_tmp}"
+        curl -fSL "${GITHUB_REALM_RC_URL}" -o "${realm_rc_tmp}" >> "$LOG_FILE" 2>&1 || { task_fail; error "下载realm.rc失败 / Failed to download realm.rc"; exit 1; }
+        install -m 755 "${realm_rc_tmp}" /etc/init.d/"$REALM_SERVICE_NAME_ALPINE" >> "$LOG_FILE" 2>&1 || { task_fail; error "安装/etc/init.d/$REALM_SERVICE_NAME_ALPINE失败 / Failed to install /etc/init.d/$REALM_SERVICE_NAME_ALPINE"; exit 1; }
+        rm -f "${realm_rc_tmp}" >> "$LOG_FILE" 2>&1
+        log_verbose "Installed OpenRC service file from realm.rc"
+        rc-update add "$REALM_SERVICE_NAME_ALPINE" >> "$LOG_FILE" 2>&1 || { task_fail; error "启用OpenRC服务$REALM_SERVICE_NAME_ALPINE失败 / Failed to enable OpenRC service $REALM_SERVICE_NAME_ALPINE"; exit 1; }
+    else
+        info "安装systemd服务 / Installing systemd service: /etc/systemd/system/${REALM_SERVICE_NAME}"
+        log_verbose "Downloading service file: ${GITHUB_REALM_SERVICE_URL} -> ${realm_service_tmp}"
+        curl -fSL "${GITHUB_REALM_SERVICE_URL}" -o "${realm_service_tmp}" >> "$LOG_FILE" 2>&1 || { task_fail; error "下载realm.service失败 / Failed to download realm.service"; exit 1; }
+        cp "${realm_service_tmp}" /etc/systemd/system/"$REALM_SERVICE_NAME" || { task_fail; error "写入/etc/systemd/system/$REALM_SERVICE_NAME失败 / Failed to write /etc/systemd/system/$REALM_SERVICE_NAME"; exit 1; }
+        rm -f "${realm_service_tmp}" >> "$LOG_FILE" 2>&1
+        log_verbose "Installed systemd service file from realm.service"
+        systemctl daemon-reload >> "$LOG_FILE" 2>&1
+        systemctl enable "$REALM_SERVICE_NAME" >> "$LOG_FILE" 2>&1 || { task_fail; error "启用systemd服务$REALM_SERVICE_NAME失败 / Failed to enable systemd service $REALM_SERVICE_NAME"; exit 1; }
+    fi
+
+    rm -f "${realm_rc_tmp}" "${realm_service_tmp}" >> "$LOG_FILE" 2>&1
+    task_done
+}
+
+configure_realm() {
+    task_start "配置 Realm / Configure Realm"
+
+    if [[ -z "$realm_remote" ]]; then
+        task_fail
+        error "缺少 --remote 参数，请指定远程地址 / --remote is required. Please specify a remote address (e.g., --remote 1.2.3.4:443)."
+        exit 1
+    fi
+
+    local remote_port=""
+    if [[ "$realm_remote" =~ ^\[([^\]]+)\]:([0-9]+)$ ]]; then
+        remote_port="${BASH_REMATCH[2]}"
+    elif [[ "$realm_remote" =~ ^([^:]+):([0-9]+)$ ]]; then
+        remote_port="${BASH_REMATCH[2]}"
+    else
+        task_fail
+        error "无效的 --remote 格式，应为 <host>:<port> (例如 1.2.3.4:443) / Invalid --remote format. Expected <host>:<port> (e.g., 1.2.3.4:443)."
+        exit 1
+    fi
+
+    if [[ -z "$remote_port" || "$remote_port" -lt 1 || "$remote_port" -gt 65535 ]]; then
+        task_fail
+        error "无效的端口号: $remote_port / Invalid port number: $remote_port"
+        exit 1
+    fi
+
+    if [[ -z "$realm_listen" ]]; then
+        if [[ $netstack == "6" ]]; then
+            realm_listen="[::]:${remote_port}"
+            info "自动监听IPv6任意地址 / Auto-listen on IPv6 any: ${cyan}${realm_listen}${none}"
+        else
+            realm_listen="0.0.0.0:${remote_port}"
+            info "自动监听IPv4任意地址 / Auto-listen on IPv4 any: ${cyan}${realm_listen}${none}"
+        fi
+    fi
+
+    local realm_config="${REALM_CONFIG_DIR}/config.json"
+    cat > "$realm_config" <<-REALMCFG
+{
+  "dns": {
+    "mode": "ipv4_and_ipv6"
+  },
+  "endpoints": [
+    {
+      "listen": "${realm_listen}",
+      "remote": "${realm_remote}"
+    }
+  ]
+}
+REALMCFG
+    if [[ $? -ne 0 ]]; then
+        task_fail
+        error "写入Realm配置文件失败: $realm_config / Failed to write realm config to $realm_config."
+        exit 1
+    fi
+
+    task_done_with_info "listen=${realm_listen}, remote=${realm_remote}"
+}
+
+restart_realm_service() {
+    task_start "启动 Realm 服务 / Starting Realm Service"
+    if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
+        if ! rc-service "$REALM_SERVICE_NAME_ALPINE" restart >> "$LOG_FILE" 2>&1; then
+            task_fail
+            error "重启Realm服务失败，请查看$LOG_FILE获取详情 / Failed to restart realm service. Check $LOG_FILE for details."
+            exit 1
+        fi
+    else
+        if ! systemctl restart "$REALM_SERVICE_NAME" >> "$LOG_FILE" 2>&1; then
+            task_fail
+            error "重启Realm服务失败，请查看$LOG_FILE获取详情 / Failed to restart realm service. Check $LOG_FILE for details."
+            exit 1
+        fi
+    fi
+    task_done
+}
+
+
 # Function to display help message
 show_help() {
   echo -e "当前版本 / Version: ${cyan}${SCRIPT_VERSION}${none} "
@@ -1258,7 +1466,10 @@ show_help() {
   echo "  --caddy            从运行的Caddy服务自动检测域名和端口 / Detect domain and port from Caddy service"
   echo "  --keepconfig       保留现有配置并从中生成输出链接 / Keep existing config.json and generate links from it"
   echo "  --force            强制重装 / Force Reinstall"
-  echo "  --remove           卸载Xray和NoKey / Uninstall Xray and NoKey"
+  echo "  --realm            安装Realm转发代理 (与 --remote 搭配) / Install Realm relay proxy (use with --remote)"
+  echo "  --remote=ADDRESS   设置Realm远程地址 (必填, 格式 host:port) / Set Realm remote address (required, format host:port)"
+  echo "  --listen=ADDRESS   设置Realm监听地址 (可选, 默认派生自远程端口) / Set Realm listen address (optional, defaults to remote port on any address)"
+  echo "  --remove           卸载Xray/Realm和NoKey / Uninstall Xray/Realm and NoKey"
   echo "  --dry-run          仅预览安装动作，不写入系统 / Preview actions only"
   echo "  --help             显示此帮助信息 / Show this help message"
 
@@ -1268,16 +1479,60 @@ show_help() {
 dry_run_preview() {
     task_start "预览安装流程 / Dry Run"
 
-    local arch_binary_name=""
-    local arch_name=""
-    arch_binary_name="$(resolve_arch_binary_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
-    arch_name="$(resolve_arch_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
     local os_family
     os_family="$(resolve_os_family)"
 
     info "预览模式：不会对系统做任何实际更改 / Dry run mode enabled: no file/service/system changes will be made."
+    log_verbose "DRY RUN | OS=${os_family}"
+
+    if [[ $realm_mode -eq 1 ]]; then
+        local realm_arch_name=""
+        realm_arch_name="$(resolve_realm_arch_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
+        info "模式: Realm转发代理 / Mode: Realm relay proxy"
+        info "架构 / Architecture: $(resolve_arch_name)"
+        info "远程地址 / Remote: ${cyan}${realm_remote}${none}"
+        if [[ -n "$realm_listen" ]]; then
+            info "监听地址 / Listen: ${cyan}${realm_listen}${none}"
+        else
+            info "监听地址 / Listen: ${cyan}(自动派生自远程端口)${none}"
+        fi
+
+        info "将创建目录 / Would create directories:"
+        info "  /usr/local/bin"
+        info "  ${REALM_CONFIG_DIR}"
+
+        info "将下载文件 / Would download files:"
+        info "  ${GITHUB_RELEASE_BASE_URL}/${realm_arch_name} -> /usr/local/bin/realm"
+
+        info "将设置权限 / Would set permission:"
+        info "  chmod 755 /usr/local/bin/realm"
+
+        if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
+            info "将安装服务(OpenRC) / Would install service (OpenRC):"
+            info "  ${GITHUB_REALM_RC_URL} -> /tmp/nokey.realm.rc.<pid>"
+            info "  /tmp/nokey.realm.rc.<pid> -> /etc/init.d/${REALM_SERVICE_NAME_ALPINE}"
+            info "  rc-update add ${REALM_SERVICE_NAME_ALPINE}"
+        else
+            info "将安装服务(systemd) / Would install service (systemd):"
+            info "  ${GITHUB_REALM_SERVICE_URL} -> /tmp/nokey.realm.service.<pid>"
+            info "  /tmp/nokey.realm.service.<pid> -> /etc/systemd/system/${REALM_SERVICE_NAME}"
+            info "  systemctl daemon-reload"
+            info "  systemctl enable ${REALM_SERVICE_NAME}"
+        fi
+
+        info "将写入配置 / Would write config:"
+        info "  ${REALM_CONFIG_DIR}/config.json"
+
+        task_done
+        return
+    fi
+
+    local arch_binary_name=""
+    local arch_name=""
+    arch_binary_name="$(resolve_arch_binary_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
+    arch_name="$(resolve_arch_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
+
     info "检测到系统 / Detected OS: ${os_family} | 架构 / Architecture: ${arch_name}"
-    log_verbose "DRY RUN | OS=${os_family} ARCH=${arch_name}"
 
     info "将创建目录 / Would create directories:"
     info "  /usr/local/bin"
@@ -1454,12 +1709,19 @@ main() {
 
     install_dependencies # the next function needs curl, in debian 9 curl is not shipped
     detect_network_interfaces
-    
-    install_xray
-    configure_xray
-    enable_bbr
-    add_alias_if_missing
-    output_results
+
+    if [[ $realm_mode -eq 1 ]]; then
+        initialize_ip_from_netstack
+        install_realm
+        configure_realm
+        restart_realm_service
+    else
+        install_xray
+        configure_xray
+        enable_bbr
+        add_alias_if_missing
+        output_results
+    fi
     info "总用时 / Elapsed Time:  ${green}$SECONDS 秒${none}"
     # info "日志文件 / Log File:  ${green}$LOG_FILE${none}"
     info "下次可以直接用别名${cyan}nokey${none}启动本脚本最新版 / Next time just run ${cyan}nokey${none} to use the latest version"

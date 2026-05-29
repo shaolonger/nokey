@@ -14,7 +14,7 @@ jobs:
     steps:
       - name: Create Temp Distribution Directory
         run: |
-          mkdir -p "${RUNNER_TEMP}/bin_dist" "${RUNNER_TEMP}/xray_extract_amd64" "${RUNNER_TEMP}/xray_extract_arm64"
+          mkdir -p "${RUNNER_TEMP}/bin_dist" "${RUNNER_TEMP}/xray_extract_amd64" "${RUNNER_TEMP}/xray_extract_arm64" "${RUNNER_TEMP}/realm_extract"
 
       - name: Get Upstream Version and Download Artifacts
         id: upstream
@@ -49,6 +49,25 @@ jobs:
           echo "sha_geoip=$(cat "${RUNNER_TEMP}/sha_geoip.txt")" >> "$GITHUB_OUTPUT"
           echo "sha_geosite=$(cat "${RUNNER_TEMP}/sha_geosite.txt")" >> "$GITHUB_OUTPUT"
 
+          # 4) Download and extract realm binary from zhboner/realm
+          realm_tag="$(curl -fsSL https://api.github.com/repos/zhboner/realm/releases/latest | jq -r '.tag_name')"
+          echo "realm_tag=${realm_tag}" >> "$GITHUB_OUTPUT"
+
+          wget -q "https://github.com/zhboner/realm/releases/latest/download/realm-x86_64-unknown-linux-gnu.tar.gz" -O "${RUNNER_TEMP}/realm_amd64.tar.gz"
+          tar -xzf "${RUNNER_TEMP}/realm_amd64.tar.gz" -C "${RUNNER_TEMP}/realm_extract"
+          cp "${RUNNER_TEMP}/realm_extract"/realm "${RUNNER_TEMP}/bin_dist"/realm_amd64
+
+          wget -q "https://github.com/zhboner/realm/releases/latest/download/realm-aarch64-unknown-linux-gnu.tar.gz" -O "${RUNNER_TEMP}/realm_arm64.tar.gz"
+          tar -xzf "${RUNNER_TEMP}/realm_arm64.tar.gz" -C "${RUNNER_TEMP}/realm_extract"
+          cp "${RUNNER_TEMP}/realm_extract"/realm "${RUNNER_TEMP}/bin_dist"/realm_arm64
+
+          # 5) Create deterministic checksums from realm binaries
+          sha256sum "${RUNNER_TEMP}/bin_dist/realm_amd64" | awk '{print $1}' > "${RUNNER_TEMP}/sha_realm_amd64.txt"
+          sha256sum "${RUNNER_TEMP}/bin_dist/realm_arm64" | awk '{print $1}' > "${RUNNER_TEMP}/sha_realm_arm64.txt"
+
+          echo "sha_realm_amd64=$(cat "${RUNNER_TEMP}/sha_realm_amd64.txt")" >> "$GITHUB_OUTPUT"
+          echo "sha_realm_arm64=$(cat "${RUNNER_TEMP}/sha_realm_arm64.txt")" >> "$GITHUB_OUTPUT"
+
       - name: Compare With Current Latest Release
         id: compare
         env:
@@ -63,6 +82,8 @@ jobs:
           current_sha_xray_arm64="$(printf '%s\n' "${current_body}" | grep '^SHA256-xray_arm64:' | sed -E 's/^SHA256-xray_arm64:[[:space:]]*//' || true)"
           current_sha_geoip="$(printf '%s\n' "${current_body}" | grep '^SHA256-geoip.dat:' | sed -E 's/^SHA256-geoip.dat:[[:space:]]*//' || true)"
           current_sha_geosite="$(printf '%s\n' "${current_body}" | grep '^SHA256-geosite.dat:' | sed -E 's/^SHA256-geosite.dat:[[:space:]]*//' || true)"
+          current_sha_realm_amd64="$(printf '%s\n' "${current_body}" | grep '^SHA256-realm_amd64:' | sed -E 's/^SHA256-realm_amd64:[[:space:]]*//' || true)"
+          current_sha_realm_arm64="$(printf '%s\n' "${current_body}" | grep '^SHA256-realm_arm64:' | sed -E 's/^SHA256-realm_arm64:[[:space:]]*//' || true)"
 
           changed="false"
           if [ "${current_tag}" != "${{ steps.upstream.outputs.upstream_tag }}" ]; then
@@ -78,6 +99,12 @@ jobs:
             changed="true"
           fi
           if [ "${current_sha_geosite}" != "${{ steps.upstream.outputs.sha_geosite }}" ]; then
+            changed="true"
+          fi
+          if [ "${current_sha_realm_amd64}" != "${{ steps.upstream.outputs.sha_realm_amd64 }}" ]; then
+            changed="true"
+          fi
+          if [ "${current_sha_realm_arm64}" != "${{ steps.upstream.outputs.sha_realm_arm64 }}" ]; then
             changed="true"
           fi
 
@@ -104,9 +131,13 @@ jobs:
             SHA256-xray_arm64: ${{ steps.upstream.outputs.sha_xray_arm64 }}
             SHA256-geoip.dat: ${{ steps.upstream.outputs.sha_geoip }}
             SHA256-geosite.dat: ${{ steps.upstream.outputs.sha_geosite }}
+            Realm-Upstream-Tag: ${{ steps.upstream.outputs.realm_tag }}
+            SHA256-realm_amd64: ${{ steps.upstream.outputs.sha_realm_amd64 }}
+            SHA256-realm_arm64: ${{ steps.upstream.outputs.sha_realm_arm64 }}
           files: |
             ${{ runner.temp }}/bin_dist/xray*
             ${{ runner.temp }}/bin_dist/geo*.dat
+            ${{ runner.temp }}/bin_dist/realm*
             
           fail_on_unmatched_files: true
           make_latest: true
