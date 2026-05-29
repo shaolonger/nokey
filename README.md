@@ -29,13 +29,14 @@
 8. 可查看帮助 --help
 9. 只输出极简步骤，详细log输出到log文件
 10. 支持X25519
-11. 暂时想到这么多……
+11. 支持--realm模式安装Realm转发代理（用--remote指定目标地址，--listen可选）
+12. 暂时想到这么多……
 
 > 已测试包括：ubuntu22/debian11/Rocky9.2/CentOS7.6/Fedora30/Alma9.2/alpine3.22，欢迎测试提issue或者报告成功结果
 
 ## 为什么从本仓库下载二进制
 
-`nokey.sh` 默认从本仓库 Releases 下载 `xray_amd64/xray_arm64/geoip.dat/geosite.dat`，而不是安装时去官方仓库临时拉取并解压 ZIP。这样做的目的：
+`nokey.sh` 默认从本仓库 Releases 下载 `xray_amd64/xray_arm64/realm_amd64/realm_arm64/geoip.dat/geosite.dat`，而不是安装时去官方仓库临时拉取并解压 ZIP。这样做的目的：
 
 1. 减少安装阶段的 CPU 和内存开销，提升低配机器成功率（尤其是 Alpine 小内存 Pod）。
 2. 降低外部依赖数量，让安装链路更短、更稳定。
@@ -73,13 +74,29 @@ nokey --force
 nokey --dry-run
 ```
 
+6. 安装Realm转发代理（把远程端口1.2.3.4:443转发到本地，自动监听0.0.0.0:443）
+```
+nokey --realm --remote 1.2.3.4:443
+```
+
+7. 安装Realm并指定监听地址
+```
+nokey --realm --remote 1.2.3.4:443 --listen 0.0.0.0:8080
+```
+
+8. Realm走IPv6
+```
+nokey --netstack=6 --realm --remote [2001:db8::1]:443
+```
+
 错误难免，请多指教，我希望能做出适合所有linux版本的，但是自己财力有限，欢迎大佬借我机器调试
 
 
 ## 卸载
 
 ```
-nokey --remove
+nokey --remove           # 卸载Xray
+nokey --realm --remove   # 卸载Realm
 ```
 
 

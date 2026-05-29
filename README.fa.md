@@ -29,13 +29,14 @@
 8. نمایش راهنما با `--help`  
 9. فقط مراحل ساده را نشان می‌دهد—لاگ کامل در فایل ذخیره می‌شود  
 10. تولید QR کد  
-11. فعلاً همین‌ها... بیشتر در راهند!
+11. حالت `--realm` — نصب پروکسی رله Realm (با `--remote` اجباری، `--listen` اختیاری)  
+12. فعلاً همین‌ها... بیشتر در راهند!
 
 ---
 
 # 📦 چرا باینری‌ها از همین مخزن دانلود می‌شوند
 
-`nokey.sh` فایل‌های `xray_amd64/xray_arm64/geoip.dat/geosite.dat` را از Releases همین مخزن دانلود می‌کند، به‌جای اینکه هنگام نصب ZIP رسمی را دریافت و extract کند.
+`nokey.sh` فایل‌های `xray_amd64/xray_arm64/realm_amd64/realm_arm64/geoip.dat/geosite.dat` را از Releases همین مخزن دانلود می‌کند، به‌جای اینکه هنگام نصب ZIP رسمی را دریافت و extract کند.
 
 دلایل:
 
@@ -63,10 +64,26 @@ nokey --dry-run
 
 ---
 
+# 🔁 رله Realm
+
+```bash
+# انتقال پورت 1.2.3.4:443 به محلی، گوش‌دادن خودکار روی 0.0.0.0:443
+nokey --realm --remote 1.2.3.4:443
+
+# با آدرس دلخواه
+nokey --realm --remote 1.2.3.4:443 --listen 0.0.0.0:8080
+
+# با IPv6
+nokey --netstack=6 --realm --remote [2001:db8::1]:443
+```
+
+---
+
 # 🧹 حذف
 
 ```bash
-nokey --remove
+nokey --remove           # حذف Xray
+nokey --realm --remove   # حذف Realm
 ```
 
 ---

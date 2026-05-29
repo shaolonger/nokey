@@ -29,13 +29,14 @@ Run a single command, sit back, and wait. No chatter, no fuss—super fast. Read
 8. Shows help with `--help`  
 9. Outputs only minimal steps—detailed logs saved to a file  
 10. Generates QR codes  
-11. More features coming soon...
+11. `--realm` mode — installs Realm relay proxy (`--remote` required, `--listen` optional)  
+12. More features coming soon...
 
 ---
 
 # 📦 Why binaries are downloaded from this repo
 
-`nokey.sh` downloads `xray_amd64/xray_arm64/geoip.dat/geosite.dat` from this repository's Releases instead of pulling and extracting official ZIP packages during install.
+`nokey.sh` downloads `xray_amd64/xray_arm64/realm_amd64/realm_arm64/geoip.dat/geosite.dat` from this repository's Releases instead of pulling and extracting official ZIP packages during install.
 
 Why:
 
@@ -63,10 +64,26 @@ nokey --dry-run
 
 ---
 
+# 🔁 Realm relay proxy
+
+```bash
+# Forward remote 1.2.3.4:443 locally, auto-listen on 0.0.0.0:443
+nokey --realm --remote 1.2.3.4:443
+
+# With custom listen address
+nokey --realm --remote 1.2.3.4:443 --listen 0.0.0.0:8080
+
+# Over IPv6
+nokey --netstack=6 --realm --remote [2001:db8::1]:443
+```
+
+---
+
 # 🧹 Uninstall
 
 ```bash
-nokey --remove
+nokey --remove           # uninstall Xray
+nokey --realm --remove   # uninstall Realm
 ```
 
 ---
