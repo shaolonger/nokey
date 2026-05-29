@@ -91,6 +91,7 @@ jobs:
           release_json="$(curl -sSL https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest || true)"
           current_body="$(printf '%s' "${release_json}" | jq -r '.body // ""' 2>/dev/null || true)"
           current_tag="$(printf '%s\n' "${current_body}" | grep '^Upstream-Tag:' | sed -E 's/^Upstream-Tag:[[:space:]]*//' || true)"
+          current_realm_tag="$(printf '%s\n' "${current_body}" | grep '^Realm-Upstream-Tag:' | sed -E 's/^Realm-Upstream-Tag:[[:space:]]*//' || true)"
           current_sha_xray_amd64="$(printf '%s\n' "${current_body}" | grep '^SHA256-xray_amd64:' | sed -E 's/^SHA256-xray_amd64:[[:space:]]*//' || true)"
           current_sha_xray_arm64="$(printf '%s\n' "${current_body}" | grep '^SHA256-xray_arm64:' | sed -E 's/^SHA256-xray_arm64:[[:space:]]*//' || true)"
           current_sha_geoip="$(printf '%s\n' "${current_body}" | grep '^SHA256-geoip.dat:' | sed -E 's/^SHA256-geoip.dat:[[:space:]]*//' || true)"
@@ -102,6 +103,9 @@ jobs:
 
           changed="false"
           if [ "${current_tag}" != "${{ steps.upstream.outputs.upstream_tag }}" ]; then
+            changed="true"
+          fi
+          if [ "${current_realm_tag}" != "${{ steps.upstream.outputs.realm_tag }}" ]; then
             changed="true"
           fi
           if [ "${current_sha_xray_amd64}" != "${{ steps.upstream.outputs.sha_xray_amd64 }}" ]; then
@@ -143,8 +147,8 @@ jobs:
         if: steps.compare.outputs.changed == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.upstream.outputs.upstream_tag }}
-          name: nokey ${{ steps.upstream.outputs.upstream_tag }}
+          tag_name: ${{ steps.upstream.outputs.upstream_tag }}-${{ steps.upstream.outputs.realm_tag }}
+          name: nokey ${{ steps.upstream.outputs.upstream_tag }} (realm ${{ steps.upstream.outputs.realm_tag }})
           body: |
             Automatic sync with latest Xray-core release.
             Upstream-Tag: ${{ steps.upstream.outputs.upstream_tag }}
