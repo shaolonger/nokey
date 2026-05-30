@@ -99,6 +99,16 @@ log_verbose() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
 }
 
+# Verbose info → log only (not stdout)
+log_info() {
+    echo -e "${yellow}$1${none}" >> "$LOG_FILE"
+}
+
+# Simple output separator for stdout
+separator() {
+    echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${none}"
+}
+
 resolve_arch_binary_name() {
     case "${1:-$(uname -m)}" in
         x86_64|amd64)
@@ -832,12 +842,9 @@ install_xray() {
     arch_binary_name="$(resolve_arch_binary_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
     arch_name="$(resolve_arch_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
 
-    info "检测到系统 / Detected OS: $(resolve_os_family) | 架构 / Architecture: ${arch_name}"
-
-    mkdir -p /usr/local/bin /usr/local/share/xray /usr/local/etc/xray || { task_fail; error "创建xray目录失败 / Failed to create xray directories"; exit 1; }
-    log_verbose "Created install directories under /usr/local"
-
-    info "正在从GitHub Releases下载xray二进制文件 / Downloading xray binary and data files from GitHub Releases"
+    log_info "检测到系统 / Detected OS: $(resolve_os_family) | 架构 / Architecture: ${arch_name}"
+    
+    log_info "正在从GitHub Releases下载xray二进制文件 / Downloading xray binary and data files from GitHub Releases"
 
     local remote_sha_xray=""
     local remote_sha_geoip=""
@@ -868,7 +875,7 @@ install_xray() {
     xray_service_tmp="$(mktemp /tmp/nokey.xray.service.XXXXXX)" || { task_fail; error "创建xray.service临时文件失败 / Failed to create temporary file for xray.service"; exit 1; }
 
     if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
-        info "安装OpenRC服务 / Installing OpenRC service: /etc/init.d/${SERVICE_NAME_ALPINE}"
+            log_info "安装OpenRC服务 / Installing OpenRC service: /etc/init.d/${SERVICE_NAME_ALPINE}"
         log_verbose "Downloading service file: ${GITHUB_XRAY_RC_URL} -> ${xray_rc_tmp}"
         curl -fSL "${GITHUB_XRAY_RC_URL}" -o "${xray_rc_tmp}" >> "$LOG_FILE" 2>&1 || { task_fail; error "下载xray.rc失败 / Failed to download xray.rc"; exit 1; }
         install -m 755 "${xray_rc_tmp}" /etc/init.d/"$SERVICE_NAME_ALPINE" >> "$LOG_FILE" 2>&1 || { task_fail; error "安装/etc/init.d/$SERVICE_NAME_ALPINE失败 / Failed to install /etc/init.d/$SERVICE_NAME_ALPINE"; exit 1; }
@@ -877,7 +884,7 @@ install_xray() {
         rc-update add "$SERVICE_NAME_ALPINE" >> "$LOG_FILE" 2>&1 || { task_fail; error "启用OpenRC服务$SERVICE_NAME_ALPINE失败 / Failed to enable OpenRC service $SERVICE_NAME_ALPINE"; exit 1; }
         log_verbose "Enabled OpenRC service: $SERVICE_NAME_ALPINE"
     else
-        info "安装systemd服务 / Installing systemd service: /etc/systemd/system/${SERVICE_NAME}"
+        log_info "安装systemd服务 / Installing systemd service: /etc/systemd/system/${SERVICE_NAME}"
         log_verbose "Downloading service file: ${GITHUB_XRAY_SERVICE_URL} -> ${xray_service_tmp}"
         curl -fSL "${GITHUB_XRAY_SERVICE_URL}" -o "${xray_service_tmp}" >> "$LOG_FILE" 2>&1 || { task_fail; error "下载xray.service失败 / Failed to download xray.service"; exit 1; }
         # shellcheck disable=SC2016
@@ -924,7 +931,7 @@ install_singbox() {
         OS="unknown"
     fi
 
-    info "检测到系统 / Detected OS: $OS (${OS_ID:-unknown})"
+    log_info "检测到系统 / Detected OS: $OS (${OS_ID:-unknown})"
     
     # Check root privileges
     if [[ $dry_run -eq 1 ]]; then
@@ -940,8 +947,8 @@ install_singbox() {
     
     case "$OS" in
         alpine)
-            apk update || { task_fail; error "apk update 失败"; exit 1; }
-            apk add --no-cache bash curl ca-certificates openssl openrc || {
+            apk update >> "$LOG_FILE" 2>&1 || { task_fail; error "apk update 失败"; exit 1; }
+            apk add --no-cache bash curl ca-certificates openssl openrc >> "$LOG_FILE" 2>&1 || {
                 task_fail; error "依赖安装失败"; exit 1
             }
             
@@ -953,13 +960,13 @@ install_singbox() {
             ;;
         debian)
             export DEBIAN_FRONTEND=noninteractive
-            apt-get update -y || { task_fail; error "apt update 失败"; exit 1; }
-            apt-get install -y curl ca-certificates openssl || {
+            apt-get update -y >> "$LOG_FILE" 2>&1 || { task_fail; error "apt update 失败"; exit 1; }
+            apt-get install -y curl ca-certificates openssl >> "$LOG_FILE" 2>&1 || {
                 task_fail; error "依赖安装失败"; exit 1
             }
             ;;
         redhat)
-            yum install -y curl ca-certificates openssl || {
+            yum install -y curl ca-certificates openssl >> "$LOG_FILE" 2>&1 || {
                 task_fail; error "依赖安装失败"; exit 1
             }
             ;;
@@ -974,13 +981,13 @@ install_singbox() {
     # Generate random port if not set
     if [[ -z $port ]]; then
         port=$(shuf -i 10000-60000 -n 1 2>/dev/null || echo $((RANDOM % 50001 + 10000)))
-        info "使用随机端口: $PORT"
+        log_info "使用随机端口: $PORT"
     fi
     
     # Generate UUID if not set (sing-box VLESS uses standard UUID format)
     if [[ -z $uuid ]]; then
         uuid=$(generate_uuid)
-        info "自动生成UUID / Auto-generated UUID"
+        log_info "自动生成UUID / Auto-generated UUID"
     fi
     
     # Default domain if not set
@@ -989,15 +996,15 @@ install_singbox() {
     fi
     
     # Install sing-box binary
-    info "正在从GitHub Releases下载sing-box二进制文件 / Downloading sing-box binary from GitHub Releases"
-    
+    log_info "正在从GitHub Releases下载sing-box二进制文件 / Downloading sing-box binary from GitHub Releases"
+
     # Determine architecture and download appropriate sing-box binary
     local arch_binary_name=""
     local arch_name=""
     arch_binary_name="$(resolve_singbox_arch_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
     arch_name="$(resolve_arch_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
     
-    info "检测到系统 / Detected OS: $(resolve_os_family) | 架构 / Architecture: ${arch_name}"
+    log_info "检测到系统 / Detected OS: $(resolve_os_family) | 架构 / Architecture: ${arch_name}"
     
     mkdir -p /usr/local/bin || { task_fail; error "创建sing-box目录失败 / Failed to create sing-box directories"; exit 1; }
     log_verbose "Created install directories under /usr/local"
@@ -1023,11 +1030,11 @@ install_singbox() {
         warn "从Release下载sing-box失败，回退到官方安装脚本 / Failed to download sing-box from Release; fallback to official installer"
         # Fallback to official sing-box installer
         if [[ "$OS" == "alpine" ]]; then
-            apk add --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community sing-box || {
+            apk add --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community sing-box >> "$LOG_FILE" 2>&1 || {
                 task_fail; error "通过apk安装sing-box失败 / Failed to install sing-box via apk"; exit 1;
             }
         else
-            bash <(curl -fsSL https://sing-box.app/install.sh) || {
+            bash <(curl -fsSL https://sing-box.app/install.sh) >> "$LOG_FILE" 2>&1 || {
                 task_fail; error "通过官方脚本安装sing-box失败 / Failed to install sing-box via official script"; exit 1;
             }
         fi
@@ -1122,7 +1129,7 @@ EOF
         service_tmp="$(mktemp /tmp/nokey.sing-box.service.XXXXXX)" || { task_fail; error "创建sing-box.service临时文件失败 / Failed to create temporary file for sing-box.service"; exit 1; }
         
         if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
-            info "安装OpenRC服务 / Installing OpenRC service: /etc/init.d/${SINGBOX_SERVICE_NAME_ALPINE}"
+            log_info "安装OpenRC服务 / Installing OpenRC service: /etc/init.d/${SINGBOX_SERVICE_NAME_ALPINE}"
             log_verbose "Downloading service file: ${GITHUB_SINGBOX_RC_URL} -> ${service_tmp}"
             if curl -fSL "${GITHUB_SINGBOX_RC_URL}" -o "${service_tmp}" >> "$LOG_FILE" 2>&1; then
                 install -m 755 "${service_tmp}" /etc/init.d/"$SINGBOX_SERVICE_NAME_ALPINE" >> "$LOG_FILE" 2>&1
@@ -1134,7 +1141,7 @@ EOF
                 rm -f "${service_tmp}" >> "$LOG_FILE" 2>&1
             fi
         else
-            info "安装systemd服务 / Installing systemd service: /etc/systemd/system/${SINGBOX_SERVICE_NAME}"
+            log_info "安装systemd服务 / Installing systemd service: /etc/systemd/system/${SINGBOX_SERVICE_NAME}"
             log_verbose "Downloading service file: ${GITHUB_SINGBOX_SERVICE_URL} -> ${service_tmp}"
             if curl -fSL "${GITHUB_SINGBOX_SERVICE_URL}" -o "${service_tmp}" >> "$LOG_FILE" 2>&1; then
                 cp "${service_tmp}" /etc/systemd/system/"$SINGBOX_SERVICE_NAME" || warn "写入/etc/systemd/system/$SINGBOX_SERVICE_NAME失败 / Failed to write $SINGBOX_SERVICE_NAME"
@@ -1632,7 +1639,7 @@ EOF
     fi
     task_done
 
-    info "--- ${config_path} ---"
+log_info "--- ${config_path} ---"
     cat "$config_path" | tee -a "$LOG_FILE"
 }
 
@@ -1698,7 +1705,7 @@ install_realm() {
     arch_binary_name="$(resolve_realm_arch_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
     arch_name="$(resolve_arch_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
 
-    info "架构 / Architecture: ${arch_name}"
+    log_info "架构 / Architecture: ${arch_name}"
 
     mkdir -p /usr/local/bin "$REALM_CONFIG_DIR" || { task_fail; error "创建Realm目录失败 / Failed to create realm directories"; exit 1; }
 
@@ -1726,7 +1733,7 @@ install_realm() {
     realm_service_tmp="$(mktemp /tmp/nokey.realm.service.XXXXXX)" || { task_fail; error "创建realm.service临时文件失败 / Failed to create temporary file for realm.service"; exit 1; }
 
     if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
-        info "安装OpenRC服务 / Installing OpenRC service: /etc/init.d/${REALM_SERVICE_NAME_ALPINE}"
+        log_info "安装OpenRC服务 / Installing OpenRC service: /etc/init.d/${REALM_SERVICE_NAME_ALPINE}"
         log_verbose "Downloading service file: ${GITHUB_REALM_RC_URL} -> ${realm_rc_tmp}"
         curl -fSL "${GITHUB_REALM_RC_URL}" -o "${realm_rc_tmp}" >> "$LOG_FILE" 2>&1 || { task_fail; error "下载realm.rc失败 / Failed to download realm.rc"; exit 1; }
         install -m 755 "${realm_rc_tmp}" /etc/init.d/"$REALM_SERVICE_NAME_ALPINE" >> "$LOG_FILE" 2>&1 || { task_fail; error "安装/etc/init.d/$REALM_SERVICE_NAME_ALPINE失败 / Failed to install /etc/init.d/$REALM_SERVICE_NAME_ALPINE"; exit 1; }
@@ -1734,7 +1741,7 @@ install_realm() {
         log_verbose "Installed OpenRC service file from realm.rc"
         rc-update add "$REALM_SERVICE_NAME_ALPINE" >> "$LOG_FILE" 2>&1 || { task_fail; error "启用OpenRC服务$REALM_SERVICE_NAME_ALPINE失败 / Failed to enable OpenRC service $REALM_SERVICE_NAME_ALPINE"; exit 1; }
     else
-        info "安装systemd服务 / Installing systemd service: /etc/systemd/system/${REALM_SERVICE_NAME}"
+        log_info "安装systemd服务 / Installing systemd service: /etc/systemd/system/${REALM_SERVICE_NAME}"
         log_verbose "Downloading service file: ${GITHUB_REALM_SERVICE_URL} -> ${realm_service_tmp}"
         curl -fSL "${GITHUB_REALM_SERVICE_URL}" -o "${realm_service_tmp}" >> "$LOG_FILE" 2>&1 || { task_fail; error "下载realm.service失败 / Failed to download realm.service"; exit 1; }
         cp "${realm_service_tmp}" /etc/systemd/system/"$REALM_SERVICE_NAME" || { task_fail; error "写入/etc/systemd/system/$REALM_SERVICE_NAME失败 / Failed to write /etc/systemd/system/$REALM_SERVICE_NAME"; exit 1; }
@@ -1777,10 +1784,10 @@ configure_realm() {
     if [[ -z "$realm_listen" ]]; then
         if [[ $netstack == "6" ]]; then
             realm_listen="[::]:${remote_port}"
-            info "自动监听IPv6任意地址 / Auto-listen on IPv6 any: ${cyan}${realm_listen}${none}"
+            log_info "自动监听IPv6任意地址 / Auto-listen on IPv6 any: ${cyan}${realm_listen}${none}"
         else
             realm_listen="0.0.0.0:${remote_port}"
-            info "自动监听IPv4任意地址 / Auto-listen on IPv4 any: ${cyan}${realm_listen}${none}"
+            log_info "自动监听IPv4任意地址 / Auto-listen on IPv4 any: ${cyan}${realm_listen}${none}"
         fi
     fi
 
@@ -1806,7 +1813,7 @@ REALMCFG
 
     task_done_with_info "listen=${realm_listen}, remote=${realm_remote}"
 
-    info "--- ${realm_config} ---"
+log_info "--- ${realm_config} ---"
     cat "$realm_config" | tee -a "$LOG_FILE"
 }
 
@@ -2210,31 +2217,25 @@ output_results() {
     # 指纹FingerPrint
     fingerprint="random"
 
-
-    # info "地址 / Address = ${cyan}${ip}${none}"
-    # info "端口 / Port = ${cyan}${port}${none}"
-    # info "用户ID / User ID (UUID) = ${cyan}${uuid}${none}"
-    # info "流控 / Flow Control = ${cyan}xtls-rprx-vision${none}"
-    # info "加密 / Encryption = ${cyan}none${none}"
-    # info "传输协议 / Network Protocol = ${cyan}tcp${none}"
-    # info "伪装类型 / Header Type = ${cyan}none${none}"
-    # info "底层传输安全 / Transport Security = ${cyan}reality${none}"
-    # info "SNI = ${cyan}${domain}${none}"
-    # info "指纹 / Fingerprint = ${cyan}${fingerprint}${none}"
-    # info "公钥 / PublicKey = ${cyan}${public_key}${none}"
-    # info "ShortId = ${cyan}${shortid}${none}"
-    # info "SpiderX = ${cyan}${spiderx}${none}"
-    # if [[ $mldsa_enabled == 1 ]]; then
-    #   info "mldsa65Seed = ${cyan}${mldsa65Seed}${none}"
-    #   info "mldsa65Verify = ${cyan}${mldsa65Verify}${none}"
-    # fi
-
-    info "${yellow}二维码生成命令：安装qrencode后运行 / For QR code, install qrencode and run: ${none} qrencode -t UTF8 -r $URL_FILE" | tee -a "$LOG_FILE"
+    # QR code tip → log only
+    log_info "二维码生成命令：安装qrencode后运行 / For QR code, install qrencode and run: qrencode -t UTF8 -r $URL_FILE"
 
     check_service_status
     
-    # info "舒服了 / Done: "
-    
+    echo "" | tee -a "$LOG_FILE"
+    separator | tee -a "$LOG_FILE"
+    if [[ $sing_box_mode -eq 1 ]]; then
+        echo -e "  ${green}✓${none} VLESS Reality Vision" | tee -a "$LOG_FILE"
+    else
+        echo -e "  ${green}✓${none} Xray VLESS Reality" | tee -a "$LOG_FILE"
+    fi
+    echo -e "  ${cyan}IP:Port${none} → ${ip}:${port}" | tee -a "$LOG_FILE"
+    if [[ $sing_box_mode -ne 1 ]] || [[ -n "$public_key" ]]; then
+        echo -e "  ${cyan}UUID${none} → ${uuid}" | tee -a "$LOG_FILE"
+    fi
+    separator | tee -a "$LOG_FILE"
+    echo "" | tee -a "$LOG_FILE"
+
     generate_share_links
     generate_clash_config
 }
