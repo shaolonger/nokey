@@ -563,7 +563,7 @@ install_dependencies() {
     task_start "开始准备工作 / Starting Preparation"
 
     #todo: "qrencode" should be a flag controlled feature
-    local tools=("curl" "netstat" "lsof" "jq")
+    local tools=("curl" "netstat" "jq")
 
     declare -A os_package_command=(
         [apt]="apt install -y"
