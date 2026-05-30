@@ -563,7 +563,7 @@ install_dependencies() {
     task_start "开始准备工作 / Starting Preparation"
 
     #todo: "qrencode" should be a flag controlled feature
-    local tools=("curl" "netstat" "jq")
+    local tools=("curl" "netstat")
 
     declare -A os_package_command=(
         [apt]="apt install -y"
@@ -675,6 +675,13 @@ load_runtime_vars_from_existing_config() {
     local jsonc_tmp=""
 
     task_start "读取现有配置 / Load existing xray config"
+
+    if ! command -v jq >/dev/null 2>&1; then
+        task_fail
+        error "--keepconfig模式需要jq，请先安装jq / --keepconfig mode requires jq. Please install jq first: apt install -y jq"
+        exit 1
+    fi
+
     if [[ ! -f "$config_path" ]]; then
         task_fail
         error "缺少配置文件: $config_path，--keepconfig需要现有配置文件 / Missing config: $config_path. --keepconfig requires an existing config file."
