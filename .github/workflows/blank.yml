@@ -87,11 +87,11 @@ jobs:
           echo "Sing-box upstream tag: ${singbox_tag}"
 
           wget -q "https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-${singbox_tag#v}-linux-amd64.tar.gz" -O "${RUNNER_TEMP}/singbox_amd64.tar.gz"
-          tar -xzf "${RUNNER_TEMP}/singbox_amd64.tar.gz" -C "${RUNNER_TEMP}/singbox_extract"
+          tar -xzf "${RUNNER_TEMP}/singbox_amd64.tar.gz" --strip-components=1 -C "${RUNNER_TEMP}/singbox_extract"
           cp "${RUNNER_TEMP}/singbox_extract"/sing-box "${RUNNER_TEMP}/bin_dist"/sing-box_amd64
 
           wget -q "https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-${singbox_tag#v}-linux-arm64.tar.gz" -O "${RUNNER_TEMP}/singbox_arm64.tar.gz"
-          tar -xzf "${RUNNER_TEMP}/singbox_arm64.tar.gz" -C "${RUNNER_TEMP}/singbox_extract"
+          tar -xzf "${RUNNER_TEMP}/singbox_arm64.tar.gz" --strip-components=1 -C "${RUNNER_TEMP}/singbox_extract"
           cp "${RUNNER_TEMP}/singbox_extract"/sing-box "${RUNNER_TEMP}/bin_dist"/sing-box_arm64
 
           # 7) Create deterministic checksums from sing-box binaries
