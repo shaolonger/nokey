@@ -18,6 +18,12 @@ readonly GITHUB_REALM_SERVICE_URL="https://raw.githubusercontent.com/livingfree2
 readonly REALM_SERVICE_NAME="realm.service"
 readonly REALM_SERVICE_NAME_ALPINE="realm"
 readonly REALM_CONFIG_DIR="/usr/local/etc/realm"
+# Sing-box constants
+readonly SINGBOX_SERVICE_NAME="sing-box.service"
+readonly SINGBOX_SERVICE_NAME_ALPINE="sing-box"
+readonly GITHUB_SINGBOX_SERVICE_URL="https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/sing-box.service"
+readonly GITHUB_SINGBOX_RC_URL="https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/sing-box.rc"
+readonly SINGBOX_CONFIG_DIR="/etc/sing-box"
 
 mldsa_enabled=0
 current_hostname=$(hostname)
@@ -37,6 +43,10 @@ realm_mode=0
 realm_only=0
 realm_remote=""
 realm_listen=""
+
+# Sing-box mode variables
+sing_box_mode=0
+sing_box_only=0
 
 # Color definitions
 readonly red='\e[91m'
@@ -125,6 +135,20 @@ resolve_os_family() {
     fi
 }
 
+resolve_singbox_arch_name() {
+    case "${1:-$(uname -m)}" in
+        x86_64|amd64)
+            echo "sing-box_amd64"
+            ;;
+        aarch64|arm64)
+            echo "sing-box_arm64"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 resolve_realm_arch_name() {
     local use_musl=0
     if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
@@ -193,8 +217,10 @@ fetch_release_sha256_map() {
     REMOTE_SHA_REALM_ARM64="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-realm_arm64:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
     REMOTE_SHA_REALM_MUSL_AMD64="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-realm_musl_amd64:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
     REMOTE_SHA_REALM_MUSL_ARM64="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-realm_musl_arm64:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
+    REMOTE_SHA_SINGBOX_AMD64="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-sing-box_amd64:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
+    REMOTE_SHA_SINGBOX_ARM64="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-sing-box_arm64:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
 
-    [[ -n "$REMOTE_SHA_XRAY_AMD64" || -n "$REMOTE_SHA_XRAY_ARM64" || -n "$REMOTE_SHA_GEOIP" || -n "$REMOTE_SHA_GEOSITE" || -n "$REMOTE_SHA_REALM_AMD64" || -n "$REMOTE_SHA_REALM_ARM64" || -n "$REMOTE_SHA_REALM_MUSL_AMD64" || -n "$REMOTE_SHA_REALM_MUSL_ARM64" ]]
+    [[ -n "$REMOTE_SHA_XRAY_AMD64" || -n "$REMOTE_SHA_XRAY_ARM64" || -n "$REMOTE_SHA_GEOIP" || -n "$REMOTE_SHA_GEOSITE" || -n "$REMOTE_SHA_REALM_AMD64" || -n "$REMOTE_SHA_REALM_ARM64" || -n "$REMOTE_SHA_REALM_MUSL_AMD64" || -n "$REMOTE_SHA_REALM_MUSL_ARM64" || -n "$REMOTE_SHA_SINGBOX_AMD64" || -n "$REMOTE_SHA_SINGBOX_ARM64" ]]
 }
 
 download_if_sha_differs() {
@@ -871,15 +897,268 @@ install_xray() {
 
 }
 
+install_singbox() {
+    if [[ $force_reinstall == 1 ]]; then
+      uninstall_singbox
+    fi
+    
+    task_start "开始，安装或升级Sing-box / Install or upgrade Sing-box"
+    
+    # Detect OS type (similar to install-singbox.sh)
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS_ID="${ID:-}"
+        OS_ID_LIKE="${ID_LIKE:-}"
+    else
+        OS_ID=""
+        OS_ID_LIKE=""
+    fi
+
+    if echo "$OS_ID $OS_ID_LIKE" | grep -qi "alpine"; then
+        OS="alpine"
+    elif echo "$OS_ID $OS_ID_LIKE" | grep -Ei "debian|ubuntu" >/dev/null; then
+        OS="debian"
+    elif echo "$OS_ID $OS_ID_LIKE" | grep -Ei "centos|rhel|fedora" >/dev/null; then
+        OS="redhat"
+    else
+        OS="unknown"
+    fi
+
+    info "检测到系统 / Detected OS: $OS (${OS_ID:-unknown})"
+    
+    # Check root privileges
+    if [[ $dry_run -eq 1 ]]; then
+        return
+    fi
+    if [ "$EUID" -ne 0 ]; then
+        error "请以root身份运行此脚本 / Please run as root: ${red}sudo -i${none}"
+        exit 1
+    fi
+    
+    # Install dependencies based on OS
+    task_start "安装系统依赖 / Installing system dependencies"
+    
+    case "$OS" in
+        alpine)
+            apk update || { task_fail; error "apk update 失败"; exit 1; }
+            apk add --no-cache bash curl ca-certificates openssl openrc || {
+                task_fail; error "依赖安装失败"; exit 1
+            }
+            
+            # 确保 OpenRC 运行
+            if ! rc-service --list 2>/dev/null | grep -q "^openrc"; then
+                rc-update add openrc boot >/dev/null 2>&1 || true
+                rc-service openrc start >/dev/null 2>&1 || true
+            fi
+            ;;
+        debian)
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -y || { task_fail; error "apt update 失败"; exit 1; }
+            apt-get install -y curl ca-certificates openssl || {
+                task_fail; error "依赖安装失败"; exit 1
+            }
+            ;;
+        redhat)
+            yum install -y curl ca-certificates openssl || {
+                task_fail; error "依赖安装失败"; exit 1
+            }
+            ;;
+        *)
+            warn "未识别的系统类型，尝试继续..."
+            ;;
+    esac
+    
+    task_done
+    
+    # For sing-box, we'll use default values similar to install-singbox.sh
+    # Generate random port if not set
+    if [[ -z $port ]]; then
+        port=$(shuf -i 10000-60000 -n 1 2>/dev/null || echo $((RANDOM % 50001 + 10000)))
+        info "使用随机端口: $PORT"
+    fi
+    
+    # Generate password if not set (sing-box uses Shadowsocks 2022-blake3-aes-128-gcm)
+    if [[ -z $uuid ]]; then  # Reusing uuid variable for password generation
+        # Generate base64 key using openssl or /dev/urandom
+        if command -v openssl >/dev/null 2>&1; then
+            uuid=$(openssl rand -base64 16 | tr -d '\n\r')
+        else
+            uuid=$(head -c 16 /dev/urandom | base64 | tr -d '\n\r')
+        fi
+        if [[ -z "$uuid" ]]; then
+            task_fail
+            error "密码生成失败 / Password generation failed"
+            exit 1
+        fi
+        info "自动生成密码 / Auto-generated password"
+    fi
+    
+    # Install sing-box binary
+    info "正在从GitHub Releases下载sing-box二进制文件 / Downloading sing-box binary from GitHub Releases"
+    
+    # Determine architecture and download appropriate sing-box binary
+    local arch_binary_name=""
+    local arch_name=""
+    arch_binary_name="$(resolve_singbox_arch_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
+    arch_name="$(resolve_arch_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
+    
+    info "检测到系统 / Detected OS: $(resolve_os_family) | 架构 / Architecture: ${arch_name}"
+    
+    mkdir -p /usr/local/bin || { task_fail; error "创建sing-box目录失败 / Failed to create sing-box directories"; exit 1; }
+    log_verbose "Created install directories under /usr/local"
+    
+    # Fetch SHA for sing-box binary from release if possible
+    local remote_sha_singbox=""
+    if fetch_release_sha256_map; then
+        if [[ "$arch_binary_name" == "sing-box_amd64" ]]; then
+            remote_sha_singbox="$REMOTE_SHA_SINGBOX_AMD64"
+        else
+            remote_sha_singbox="$REMOTE_SHA_SINGBOX_ARM64"
+        fi
+        log_verbose "Fetched release checksums successfully for comparison"
+    else
+        warn "获取Release校验和失败，回退到直接下载文件 / Failed to fetch release checksums; fallback to downloading files directly."
+    fi
+    
+    local download_url="${GITHUB_RELEASE_BASE_URL}/${arch_binary_name}"
+    if download_if_sha_differs "/usr/local/bin/sing-box" "$remote_sha_singbox" "$download_url" "${arch_binary_name}"; then
+        chmod 755 /usr/local/bin/sing-box
+        log_verbose "Set executable permissions on /usr/local/bin/sing-box"
+    else
+        warn "从Release下载sing-box失败，回退到官方安装脚本 / Failed to download sing-box from Release; fallback to official installer"
+        # Fallback to official sing-box installer
+        if [[ "$OS" == "alpine" ]]; then
+            apk add --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community sing-box || {
+                task_fail; error "通过apk安装sing-box失败 / Failed to install sing-box via apk"; exit 1;
+            }
+        else
+            bash <(curl -fsSL https://sing-box.app/install.sh) || {
+                task_fail; error "通过官方脚本安装sing-box失败 / Failed to install sing-box via official script"; exit 1;
+            }
+        fi
+    fi
+    
+    # Create configuration directory and file
+    mkdir -p "$SINGBOX_CONFIG_DIR" || { task_fail; error "创建sing-box配置目录失败 / Failed to create sing-box config directory"; exit 1; }
+    
+    # Generate sing-box config (Shadowsocks 2022-blake3-aes-128-gcm)
+    local config_path="${SINGBOX_CONFIG_DIR}/config.json"
+    cat > "$config_path" <<EOF
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "inbounds": [
+    {
+      "type": "shadowsocks",
+      "listen": "::",
+      "listen_port": $port,
+      "method": "2022-blake3-aes-128-gcm",
+      "password": "$uuid",
+      "tag": "ss2022-in"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct-out"
+    }
+  ]
+}
+EOF
+    
+    # Validate configuration if sing-box is available
+    if command -v sing-box >/dev/null 2>&1; then
+        if sing-box check -c "$config_path" >/dev/null 2>&1; then
+            info "配置文件验证通过 / Config file validation passed"
+        else
+            warn "配置文件验证失败，但将继续... / Config file validation failed, but continuing..."
+        fi
+    fi
+    
+    # Setup service (if not already installed by package manager)
+    if [[ ! -f "/etc/init.d/$SINGBOX_SERVICE_NAME_ALPINE" && ! -f "/etc/systemd/system/$SINGBOX_SERVICE_NAME" ]]; then
+        local service_tmp
+        service_tmp="$(mktemp /tmp/nokey.sing-box.service.XXXXXX)" || { task_fail; error "创建sing-box.service临时文件失败 / Failed to create temporary file for sing-box.service"; exit 1; }
+        
+        if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
+            info "安装OpenRC服务 / Installing OpenRC service: /etc/init.d/${SINGBOX_SERVICE_NAME_ALPINE}"
+            log_verbose "Downloading service file: ${GITHUB_SINGBOX_RC_URL} -> ${service_tmp}"
+            if curl -fSL "${GITHUB_SINGBOX_RC_URL}" -o "${service_tmp}" >> "$LOG_FILE" 2>&1; then
+                install -m 755 "${service_tmp}" /etc/init.d/"$SINGBOX_SERVICE_NAME_ALPINE" >> "$LOG_FILE" 2>&1
+                rm -f "${service_tmp}" >> "$LOG_FILE" 2>&1
+                log_verbose "Installed OpenRC service file from sing-box.rc"
+                rc-update add "$SINGBOX_SERVICE_NAME_ALPINE" >> "$LOG_FILE" 2>&1 || warn "添加sing-box开机自启失败 / Failed to add sing-box to startup"
+            else
+                warn "下载sing-box.rc失败，服务可能已被包管理器安装 / Failed to download sing-box.rc; service may already be installed by package manager"
+                rm -f "${service_tmp}" >> "$LOG_FILE" 2>&1
+            fi
+        else
+            info "安装systemd服务 / Installing systemd service: /etc/systemd/system/${SINGBOX_SERVICE_NAME}"
+            log_verbose "Downloading service file: ${GITHUB_SINGBOX_SERVICE_URL} -> ${service_tmp}"
+            if curl -fSL "${GITHUB_SINGBOX_SERVICE_URL}" -o "${service_tmp}" >> "$LOG_FILE" 2>&1; then
+                cp "${service_tmp}" /etc/systemd/system/"$SINGBOX_SERVICE_NAME" || warn "写入/etc/systemd/system/$SINGBOX_SERVICE_NAME失败 / Failed to write $SINGBOX_SERVICE_NAME"
+                rm -f "${service_tmp}" >> "$LOG_FILE" 2>&1
+                log_verbose "Installed systemd service file from sing-box.service"
+                systemctl daemon-reload >> "$LOG_FILE" 2>&1 || true
+                systemctl enable "$SINGBOX_SERVICE_NAME" >> "$LOG_FILE" 2>&1 || warn "启用sing-box服务失败 / Failed to enable sing-box service"
+            else
+                warn "下载sing-box.service失败，服务可能已被包管理器安装 / Failed to download sing-box.service; service may already be installed by package manager"
+                rm -f "${service_tmp}" >> "$LOG_FILE" 2>&1
+            fi
+        fi
+    else
+        info "服务文件已存在，跳过服务安装 / Service file already exists, skipping service setup"
+    fi
+    
+    # Restart sing-box to pick up the new config
+    task_start "启动Sing-box服务 / Starting Sing-box Service"
+    if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
+        if rc-service "$SINGBOX_SERVICE_NAME_ALPINE" restart >> "$LOG_FILE" 2>&1; then
+            task_done
+        else
+            warn "重启Sing-box服务失败，请手动启动 / Failed to restart sing-box service, please start manually"
+            task_done
+        fi
+    else
+        if systemctl restart "$SINGBOX_SERVICE_NAME" >> "$LOG_FILE" 2>&1; then
+            task_done
+        else
+            warn "重启Sing-box服务失败，请手动启动 / Failed to restart sing-box service, please start manually"
+            task_done
+        fi
+    fi
+}
+
+uninstall_singbox() {
+    task_start "卸载 Sing-box / Uninstall Sing-box"
+    {
+        if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
+            rc-service "$SINGBOX_SERVICE_NAME_ALPINE" stop 2>/dev/null || true
+            rc-update del "$SINGBOX_SERVICE_NAME_ALPINE" 2>/dev/null || true
+            rm -f "/etc/init.d/$SINGBOX_SERVICE_NAME_ALPINE"
+        else
+            systemctl stop "$SINGBOX_SERVICE_NAME" 2>/dev/null || true
+            systemctl disable "$SINGBOX_SERVICE_NAME" 2>/dev/null || true
+            rm -f "/etc/systemd/system/$SINGBOX_SERVICE_NAME" 2>/dev/null || true
+            systemctl daemon-reload 2>/dev/null || true
+        fi
+        rm -f /usr/local/bin/sing-box
+        rm -rf "$SINGBOX_CONFIG_DIR"
+    } >> "$LOG_FILE" 2>&1
+    task_done
+}
+
 uninstall_in_alpine() {
-  {
-    rc-service "$SERVICE_NAME_ALPINE" stop
-    rc-update del "$SERVICE_NAME_ALPINE"
-    rm -rf "/usr/local/bin/xray"
-    rm -rf "/usr/local/share/xray"
-    rm -rf "/usr/local/etc/xray/"
-    rm -rf "/etc/init.d/$SERVICE_NAME_ALPINE"
-  } >> "$LOG_FILE" 2>&1
+   {
+     rc-service "$SERVICE_NAME_ALPINE" stop
+     rc-update del "$SERVICE_NAME_ALPINE"
+     rm -rf "/usr/local/bin/xray"
+     rm -rf "/usr/local/share/xray"
+     rm -rf "/usr/local/etc/xray/"
+     rm -rf "/etc/init.d/$SERVICE_NAME_ALPINE"
+   } >> "$LOG_FILE" 2>&1
 }
 
 uninstall_xray() {
@@ -1022,12 +1301,19 @@ parse_args() {
           realm_mode=1
           ;;
         --realm-only)
-          realm_mode=1
-          realm_only=1
-          ;;
+            realm_mode=1
+            realm_only=1
+            ;;
+        --singbox)
+            sing_box_mode=1
+            ;;
+        --singbox-only)
+            sing_box_mode=1
+            sing_box_only=1
+            ;;
         --remote=*)
-          realm_remote="${arg#*=}"
-          ;;
+            realm_remote="${arg#*=}"
+            ;;
         --listen=*)
           realm_listen="${arg#*=}"
           ;;
@@ -1043,7 +1329,10 @@ parse_args() {
           if [[ $realm_mode -eq 1 ]]; then
             uninstall_realm
           fi
-          if [[ $realm_only -ne 1 ]]; then
+          if [[ $sing_box_mode -eq 1 ]]; then
+            uninstall_singbox
+          fi
+          if [[ $realm_only -ne 1 && $sing_box_mode -ne 1 ]]; then
             uninstall_xray
           fi
           info "卸载完成 / Uninstallation complete ... [${green}OK${none}]"
@@ -1061,18 +1350,24 @@ parse_args() {
 
     validate_keepconfig_conflicts
 
-    if [[ $realm_mode -eq 1 ]]; then
-        if [[ -z "$realm_remote" ]]; then
-            error "错误: --realm 模式下 --remote 是必填项 / Error: --remote is required when using --realm."
-            error "用法: --realm --remote <host:port> [--listen <host:port>] / Usage: --realm --remote <host:port> [--listen <host:port>]"
-            show_help
-        fi
-        # Validate --remote format: must contain a colon + port
-        if ! [[ "$realm_remote" =~ ^\[?[^\]]*\]?:[0-9]+$ ]]; then
-            error "错误: --remote 格式无效，应为 <host>:<port> (例如 1.2.3.4:443) / Error: Invalid --remote format. Expected <host>:<port> (e.g., 1.2.3.4:443)."
-            exit 1
-        fi
-    fi
+     if [[ $realm_mode -eq 1 ]]; then
+         if [[ -z "$realm_remote" ]]; then
+             error "错误: --realm 模式下 --remote 是必填项 / Error: --remote is required when using --realm."
+             error "用法: --realm --remote <host:port> [--listen <host:port>] / Usage: --realm --remote <host:port> [--listen <host:port>]"
+             show_help
+         fi
+         # Validate --remote format: must contain a colon + port
+         if ! [[ "$realm_remote" =~ ^\[?[^\]]*\]?:[0-9]+$ ]]; then
+             error "错误: --remote 格式无效，应为 <host>:<port> (例如 1.2.3.4:443) / Error: Invalid --remote format. Expected <host>:<port> (e.g., 1.2.3.4:443)."
+             exit 1
+         fi
+     fi
+     
+     # Validate sing-box mode (no additional parameters required for now)
+     if [[ $sing_box_mode -eq 1 ]]; then
+         # No additional validation needed for sing-box mode as it uses default parameters
+         :
+     fi
 
 }
 
@@ -1107,11 +1402,21 @@ initialize_variables() {
     fi
     task_done_with_info "$port"
 
-    if [[ -z $domain ]]; then
-      # info "用户没有指定自己的SNI，使用默认 / User did not specify SNI, using default"
-      domain="$DEFAULT_DOMAIN"
+    # For sing-box mode, we don't need domain/SNI detection
+    if [[ $sing_box_mode -eq 1 ]]; then
+        # Sing-box uses Shadowsocks, doesn't need domain/SNI like xray/realm
+        # Keep domain as empty or default, but it won't be used in sing-box config
+        if [[ -z $domain ]]; then
+            domain="$DEFAULT_DOMAIN"  # Set default for consistency, though not used
+        fi
     else
-      info "用户指定了自己的SNI / User specified SNI: ${cyan}${domain}${none}"
+        # Original domain logic for xray/realm modes
+        if [[ -z $domain ]]; then
+          # info "用户没有指定自己的SNI，使用默认 / User did not specify SNI, using default"
+          domain="$DEFAULT_DOMAIN"
+        else
+          info "用户指定了自己的SNI / User specified SNI: ${cyan}${domain}${none}"
+        fi
     fi
 }
 
@@ -1530,8 +1835,10 @@ show_help() {
   echo "  --caddy            从运行的Caddy服务自动检测域名和端口 / Detect domain and port from Caddy service"
   echo "  --keepconfig       保留现有配置并从中生成输出链接 / Keep existing config.json and generate links from it"
   echo "  --force            强制重装 / Force Reinstall"
-  echo "  --realm            额外安装Realm转发代理 (与 --remote 搭配) / Also install Realm relay proxy alongside Xray (use with --remote)"
-  echo "  --realm-only      仅安装Realm转发代理 (不安装Xray, 与 --remote 搭配) / Install Realm relay proxy only (without Xray, use with --remote)"
+   echo "  --realm            额外安装Realm转发代理 (与 --remote 搭配) / Also install Realm relay proxy alongside Xray/Sing-box (use with --remote)"
+   echo "  --realm-only      仅安装Realm转发代理 (不安装Xray/Sing-box, 与 --remote 搭配) / Install Realm relay proxy only (without Xray/Sing-box, use with --remote)"
+   echo "  --singbox         安装Sing-box代替Xray (使用默认Shadowsocks 2022-blake3-aes-128-gcm) / Install Sing-box instead of Xray (uses default Shadowsocks 2022-blake3-aes-128-gcm)"
+   echo "  --singbox-only    仅安装Sing-box (不安装Xray, 使用默认Shadowsocks 2022-blake3-aes-128-gcm) / Install Sing-box only (without Xray, uses default Shadowsocks 2022-blake3-aes-128-gcm)"
   echo "  --remote=ADDRESS   设置Realm远程地址 (必填, 格式 host:port) / Set Realm remote address (required, format host:port)"
   echo "  --listen=ADDRESS   设置Realm监听地址 (可选, 默认派生自远程端口) / Set Realm listen address (optional, defaults to remote port on any address)"
   echo "  --remove           卸载Xray (和已安装的Realm) 与NoKey / Uninstall Xray (and Realm if installed) and NoKey"
@@ -1592,6 +1899,52 @@ dry_run_preview() {
         info "将写入配置 / Would write config:"
         info "  ${REALM_CONFIG_DIR}/config.json"
         info ""
+    fi
+
+    # Handle sing-box mode in dry run
+    if [[ $sing_box_mode -eq 1 ]]; then
+        info "${green}=== Sing-box (Shadowsocks 2022-blake3-aes-128-gcm) ===${none}"
+        if [[ $realm_only -eq 1 ]]; then
+            info "跳过Sing-box安装: --realm-only 模式 / Skipping Sing-box: --realm-only mode"
+            task_done
+            return
+        fi
+        
+        local singbox_arch_name=""
+        singbox_arch_name="$(resolve_singbox_arch_name)" || { task_fail; error "不支持的架构: $(uname -m)，仅支持amd64和arm64 / Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported."; exit 1; }
+        
+        info "将创建目录 / Would create directories:"
+        info "  /usr/local/bin"
+        info "  $SINGBOX_CONFIG_DIR"
+        
+        info "将下载文件 / Would download files:"
+        info "  ${GITHUB_RELEASE_BASE_URL}/${singbox_arch_name} -> /usr/local/bin/sing-box"
+        
+        info "将设置权限 / Would set permission:"
+        info "  chmod 755 /usr/local/bin/sing-box"
+        
+        if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
+            info "将安装服务(OpenRC) / Would install service (OpenRC):"
+            info "  ${GITHUB_SINGBOX_RC_URL} -> /tmp/nokey.sing-box.rc.<pid>"
+            info "  /tmp/nokey.sing-box.rc.<pid> -> /etc/init.d/${SINGBOX_SERVICE_NAME_ALPINE}"
+            info "  rc-update add ${SINGBOX_SERVICE_NAME_ALPINE}"
+        else
+            info "将安装服务(systemd) / Would install service (systemd):"
+            info "  ${GITHUB_SINGBOX_SERVICE_URL} -> /tmp/nokey.sing-box.service.<pid>"
+            info "  /tmp/nokey.sing-box.service.<pid> -> /etc/systemd/system/${SINGBOX_SERVICE_NAME}"
+            info "  systemctl daemon-reload"
+            info "  systemctl enable ${SINGBOX_SERVICE_NAME}"
+        fi
+        
+        info "将写入配置 / Would write config:"
+        info "  $SINGBOX_CONFIG_DIR/config.json"
+        info ""
+    fi
+    
+    # Skip xray section when in sing-box mode
+    if [[ $sing_box_mode -eq 1 ]]; then
+        task_done
+        return
     fi
 
     info "${green}=== Xray (VLESS Reality) ===${none}"
@@ -1675,6 +2028,31 @@ check_service_status() {
         return
     fi
 
+    # Check sing-box service if in sing-box mode
+    if [[ $sing_box_mode -eq 1 ]]; then
+        if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
+            if rc-service "$SINGBOX_SERVICE_NAME_ALPINE" status >> "$LOG_FILE" 2>&1; then
+                info "Sing-box服务运行中 / Sing-box is running"
+            else
+                error "Sing-box服务未运行 / Sing-box service is not active"
+                rc-service "$SINGBOX_SERVICE_NAME_ALPINE" status | tee -a "$LOG_FILE"
+                error "详细日志记录在 $LOG_FILE / See complete logs"
+                exit 1
+            fi
+        else
+            if systemctl is-active --quiet "$SINGBOX_SERVICE_NAME"; then
+                info "Sing-box服务运行中 / Sing-box is running"
+            else
+                error "Sing-box服务未运行 / Sing-box service is not active"
+                systemctl status "$SINGBOX_SERVICE_NAME" | tee -a "$LOG_FILE"
+                error "详细日志记录在 $LOG_FILE / See complete logs"
+                exit 1
+            fi
+        fi
+        task_done
+        return
+    fi
+
     if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
       if rc-service "$SERVICE_NAME_ALPINE" status >> "$LOG_FILE" 2>&1; then 
           info "Xray服务运行中 / Xray is running"
@@ -1698,7 +2076,28 @@ check_service_status() {
     task_done
 }
 
+generate_ss_uri() {
+    local ss_method="2022-blake3-aes-128-gcm"
+    local encoded_userinfo
+    local userinfo="${ss_method}:${uuid}"
+    if command -v python3 >/dev/null 2>&1; then
+        encoded_userinfo=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$userinfo', safe=''))" 2>/dev/null || echo "$userinfo")
+    else
+        encoded_userinfo=$(printf "%s" "$userinfo" | sed 's/:/%3A/g; s/+/%2B/g; s/\//%2F/g; s/=/%3D/g')
+    fi
+    local ss_uri="ss://${encoded_userinfo}@${ip}:${port}#${current_hostname}"
+    echo "$ss_uri"
+}
+
 generate_share_links() {
+    if [[ $sing_box_mode -eq 1 ]]; then
+        info "分享链接 / Share Link:"
+        local ss_uri
+        ss_uri=$(generate_ss_uri)
+        echo -e "${magenta}${ss_uri}${none}" | tee -a "$LOG_FILE" | tee -a "$URL_FILE"
+        return
+    fi
+
     if [[ $netstack == "6" ]]; then
       ip="[$ip]"
     fi
@@ -1718,6 +2117,26 @@ generate_share_links() {
 }
 
 generate_clash_config() {
+    if [[ $sing_box_mode -eq 1 ]]; then
+        local server_ip=$ip
+        if [[ $netstack == "6" ]]; then
+            server_ip=${ip:1:-1}
+        fi
+        local clash_config
+        clash_config=$(cat <<-EOF
+  - name: ${current_hostname}
+    type: ss
+    server: ${server_ip}
+    port: ${port}
+    cipher: 2022-blake3-aes-128-gcm
+    password: "${uuid}"
+EOF
+)
+        info "Clash.meta 配置 / Clash.meta config:"
+        echo -e "${cyan}${clash_config}${none}" | tee -a "$LOG_FILE" | tee -a "$URL_FILE"
+        return
+    fi
+
     local server_ip_for_clash=$ip
     if [[ $netstack == "6" ]]; then
         # for clash meta, ipv6 does not need bracket.
@@ -1809,18 +2228,30 @@ main() {
     install_dependencies # the next function needs curl, in debian 9 curl is not shipped
     detect_network_interfaces
 
+    # Handle sing-box mode: install sing-box instead of xray
+    if [[ $sing_box_mode -eq 1 ]]; then
+        if [[ $realm_only -ne 1 ]]; then
+            initialize_ip_from_netstack
+            install_singbox
+            enable_bbr
+            add_alias_if_missing
+        fi
+    else
+        # Default xray mode
+        if [[ $realm_only -ne 1 ]]; then
+            install_xray
+            configure_xray
+            enable_bbr
+            add_alias_if_missing
+        fi
+    fi
+
+    # Handle realm installation (can be combined with either xray or sing-box)
     if [[ $realm_mode -eq 1 ]]; then
         initialize_ip_from_netstack
         install_realm
         configure_realm
         restart_realm_service
-    fi
-
-    if [[ $realm_only -ne 1 ]]; then
-        install_xray
-        configure_xray
-        enable_bbr
-        add_alias_if_missing
     fi
 
     output_results
