@@ -977,20 +977,15 @@ install_singbox() {
         info "使用随机端口: $PORT"
     fi
     
-    # Generate password if not set (sing-box uses Shadowsocks 2022-blake3-aes-128-gcm)
-    if [[ -z $uuid ]]; then  # Reusing uuid variable for password generation
-        # Generate base64 key using openssl or /dev/urandom
-        if command -v openssl >/dev/null 2>&1; then
-            uuid=$(openssl rand -base64 16 | tr -d '\n\r')
-        else
-            uuid=$(head -c 16 /dev/urandom | base64 | tr -d '\n\r')
-        fi
-        if [[ -z "$uuid" ]]; then
-            task_fail
-            error "密码生成失败 / Password generation failed"
-            exit 1
-        fi
-        info "自动生成密码 / Auto-generated password"
+    # Generate UUID if not set (sing-box VLESS uses standard UUID format)
+    if [[ -z $uuid ]]; then
+        uuid=$(generate_uuid)
+        info "自动生成UUID / Auto-generated UUID"
+    fi
+    
+    # Default domain if not set
+    if [[ -z $domain ]]; then
+        domain="$DEFAULT_DOMAIN"
     fi
     
     # Install sing-box binary
@@ -1041,7 +1036,31 @@ install_singbox() {
     # Create configuration directory and file
     mkdir -p "$SINGBOX_CONFIG_DIR" || { task_fail; error "创建sing-box配置目录失败 / Failed to create sing-box config directory"; exit 1; }
     
-    # Generate sing-box config (Shadowsocks 2022-blake3-aes-128-gcm)
+    # Generate Reality keypair using sing-box
+    task_start "生成Reality密钥对 / Generate Reality Key Pair"
+    keys=$(sing-box generate reality-keypair 2>>"$LOG_FILE")
+    if [[ -z "$keys" ]]; then
+        task_fail
+        error "生成Reality密钥失败，sing-box是否安装正确？ / Failed to generate Reality keys. Is sing-box installed correctly?"
+        exit 1
+    fi
+    private_key=$(extract_private_key_from_x25519_output "$keys")
+    public_key=$(extract_public_key_from_x25519_output "$keys")
+    if [[ -z "$private_key" || -z "$public_key" ]]; then
+        task_fail
+        error "无法解析Reality密钥 / Failed to parse Reality keys"
+        exit 1
+    fi
+    task_done_with_info "${public_key}"
+    
+    # Generate shortid if not set
+    task_start "生成shortid / Generate shortid"
+    if [[ -z $shortid ]]; then
+        shortid=$(generate_shortid)
+    fi
+    task_done_with_info "${shortid}"
+    
+    # Generate sing-box config (VLESS Reality Vision)
     local config_path="${SINGBOX_CONFIG_DIR}/config.json"
     cat > "$config_path" <<EOF
 {
@@ -1051,12 +1070,32 @@ install_singbox() {
   },
   "inbounds": [
     {
-      "type": "shadowsocks",
+      "type": "vless",
+      "tag": "vless-in",
       "listen": "::",
       "listen_port": $port,
-      "method": "2022-blake3-aes-128-gcm",
-      "password": "$uuid",
-      "tag": "ss2022-in"
+      "users": [
+        {
+          "name": "nokey",
+          "uuid": "$uuid",
+          "flow": "xtls-rprx-vision"
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "$domain",
+        "alpn": ["h2", "http/1.1"],
+        "reality": {
+          "enabled": true,
+          "handshake": {
+            "server": "$domain",
+            "server_port": 443
+          },
+          "private_key": "$private_key",
+          "short_id": ["$shortid"],
+          "max_time_difference": "1m"
+        }
+      }
     }
   ],
   "outbounds": [
@@ -1363,9 +1402,8 @@ parse_args() {
          fi
      fi
      
-     # Validate sing-box mode (no additional parameters required for now)
+     # Validate sing-box mode (uses same --port, --uuid, --domain as xray)
      if [[ $sing_box_mode -eq 1 ]]; then
-         # No additional validation needed for sing-box mode as it uses default parameters
          :
      fi
 
@@ -1402,12 +1440,10 @@ initialize_variables() {
     fi
     task_done_with_info "$port"
 
-    # For sing-box mode, we don't need domain/SNI detection
+    # For sing-box mode, set default domain if not specified
     if [[ $sing_box_mode -eq 1 ]]; then
-        # Sing-box uses Shadowsocks, doesn't need domain/SNI like xray/realm
-        # Keep domain as empty or default, but it won't be used in sing-box config
         if [[ -z $domain ]]; then
-            domain="$DEFAULT_DOMAIN"  # Set default for consistency, though not used
+            domain="$DEFAULT_DOMAIN"
         fi
     else
         # Original domain logic for xray/realm modes
@@ -1837,8 +1873,8 @@ show_help() {
   echo "  --force            强制重装 / Force Reinstall"
    echo "  --realm            额外安装Realm转发代理 (与 --remote 搭配) / Also install Realm relay proxy alongside Xray/Sing-box (use with --remote)"
    echo "  --realm-only      仅安装Realm转发代理 (不安装Xray/Sing-box, 与 --remote 搭配) / Install Realm relay proxy only (without Xray/Sing-box, use with --remote)"
-   echo "  --singbox         安装Sing-box代替Xray (使用默认Shadowsocks 2022-blake3-aes-128-gcm) / Install Sing-box instead of Xray (uses default Shadowsocks 2022-blake3-aes-128-gcm)"
-   echo "  --singbox-only    仅安装Sing-box (不安装Xray, 使用默认Shadowsocks 2022-blake3-aes-128-gcm) / Install Sing-box only (without Xray, uses default Shadowsocks 2022-blake3-aes-128-gcm)"
+   echo "  --singbox         安装Sing-box代替Xray (使用VLESS Reality Vision) / Install Sing-box instead of Xray (uses VLESS Reality Vision)"
+   echo "  --singbox-only    仅安装Sing-box (不安装Xray, 使用VLESS Reality Vision) / Install Sing-box only (without Xray, uses VLESS Reality Vision)"
   echo "  --remote=ADDRESS   设置Realm远程地址 (必填, 格式 host:port) / Set Realm remote address (required, format host:port)"
   echo "  --listen=ADDRESS   设置Realm监听地址 (可选, 默认派生自远程端口) / Set Realm listen address (optional, defaults to remote port on any address)"
   echo "  --remove           卸载Xray (和已安装的Realm) 与NoKey / Uninstall Xray (and Realm if installed) and NoKey"
@@ -1903,7 +1939,7 @@ dry_run_preview() {
 
     # Handle sing-box mode in dry run
     if [[ $sing_box_mode -eq 1 ]]; then
-        info "${green}=== Sing-box (Shadowsocks 2022-blake3-aes-128-gcm) ===${none}"
+        info "${green}=== Sing-box (VLESS Reality Vision) ===${none}"
         if [[ $realm_only -eq 1 ]]; then
             info "跳过Sing-box安装: --realm-only 模式 / Skipping Sing-box: --realm-only mode"
             task_done
@@ -1923,6 +1959,13 @@ dry_run_preview() {
         info "将设置权限 / Would set permission:"
         info "  chmod 755 /usr/local/bin/sing-box"
         
+        info "将生成密钥 / Would generate Reality keys:"
+        info "  sing-box generate reality-keypair"
+        info "  private_key / public_key pair"
+        
+        info "将生成shortid / Would generate shortid:"
+        info "  random 16-character hex string"
+        
         if [ "$ID" = "alpine" ] || [ "$ID_LIKE" = "alpine" ]; then
             info "将安装服务(OpenRC) / Would install service (OpenRC):"
             info "  ${GITHUB_SINGBOX_RC_URL} -> /tmp/nokey.sing-box.rc.<pid>"
@@ -1938,6 +1981,7 @@ dry_run_preview() {
         
         info "将写入配置 / Would write config:"
         info "  $SINGBOX_CONFIG_DIR/config.json"
+        info "  协议: VLESS Reality Vision with xtls-rprx-vision flow"
         info ""
     fi
     
@@ -2076,25 +2120,16 @@ check_service_status() {
     task_done
 }
 
-generate_ss_uri() {
-    local ss_method="2022-blake3-aes-128-gcm"
-    local encoded_userinfo
-    local userinfo="${ss_method}:${uuid}"
-    if command -v python3 >/dev/null 2>&1; then
-        encoded_userinfo=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$userinfo', safe=''))" 2>/dev/null || echo "$userinfo")
-    else
-        encoded_userinfo=$(printf "%s" "$userinfo" | sed 's/:/%3A/g; s/+/%2B/g; s/\//%2F/g; s/=/%3D/g')
-    fi
-    local ss_uri="ss://${encoded_userinfo}@${ip}:${port}#${current_hostname}"
-    echo "$ss_uri"
-}
-
 generate_share_links() {
     if [[ $sing_box_mode -eq 1 ]]; then
+        local server_ip=$ip
+        if [[ $netstack == "6" ]]; then
+            server_ip="[$ip]"
+        fi
+        local link
+        link="vless://${uuid}@${server_ip}:${port}?flow=xtls-rprx-vision&encryption=none&type=tcp&security=reality&sni=${domain}&fp=${fingerprint}&pbk=${public_key}&sid=${shortid}#${current_hostname}"
         info "分享链接 / Share Link:"
-        local ss_uri
-        ss_uri=$(generate_ss_uri)
-        echo -e "${magenta}${ss_uri}${none}" | tee -a "$LOG_FILE" | tee -a "$URL_FILE"
+        echo -e "${magenta}${link}${none}" | tee -a "$LOG_FILE" | tee -a "$URL_FILE"
         return
     fi
 
@@ -2125,11 +2160,18 @@ generate_clash_config() {
         local clash_config
         clash_config=$(cat <<-EOF
   - name: ${current_hostname}
-    type: ss
+    type: vless
     server: ${server_ip}
     port: ${port}
-    cipher: 2022-blake3-aes-128-gcm
-    password: "${uuid}"
+    client-fingerprint: ${fingerprint}
+    tls: true
+    servername: ${domain}
+    flow: xtls-rprx-vision
+    network: tcp
+    reality-opts:
+      public-key: ${public_key}
+      short-id: ${shortid}
+    uuid: ${uuid}
 EOF
 )
         info "Clash.meta 配置 / Clash.meta config:"

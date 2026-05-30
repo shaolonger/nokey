@@ -31,7 +31,7 @@
 10. 支持X25519
 11. 支持`--realm`模式安装Realm转发代理（用`--remote`指定目标地址，`--listen`可选）
 12. 支持`--realm-only`模式仅安装Realm（不安装Xray）
-13. 支持`--singbox`模式安装Sing-box代替Xray（使用Shadowsocks 2022-blake3-aes-128-gcm）
+13. 支持`--singbox`模式安装Sing-box代替Xray（使用VLESS Reality Vision）
 14. 暂时想到这么多……
 
 > 已测试包括：ubuntu22/debian11/Rocky9.2/CentOS7.6/Fedora30/Alma9.2/alpine3.22，欢迎测试提issue或者报告成功结果
@@ -98,7 +98,7 @@ nokey
 nokey --realm-only --remote 1.2.3.4:443
 ```
 
-### 场景四：安装Sing-box代替Xray（Shadowsocks 2022）
+### 场景四：安装Sing-box代替Xray（VLESS Reality Vision）
 ```
 # 安装Sing-box（代替Xray）
 nokey --singbox
@@ -106,8 +106,11 @@ nokey --singbox
 # 安装Sing-box + Realm转发代理
 nokey --singbox --realm --remote 1.2.3.4:443
 
-# 指定端口和密码（--uuid被用作Shadowsocks密码）
-nokey --singbox --port 12345 --uuid "your-base64-key"
+# 指定端口和UUID
+nokey --singbox --port 12345 --uuid "your-uuid-here"
+
+# 指定SNI域名
+nokey --singbox --domain www.example.com
 
 # 仅预览安装流程
 nokey --singbox --dry-run
