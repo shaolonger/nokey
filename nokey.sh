@@ -1026,6 +1026,17 @@ install_singbox() {
     if download_if_sha_differs "/usr/local/bin/sing-box" "$remote_sha_singbox" "$download_url" "${arch_binary_name}"; then
         chmod 755 /usr/local/bin/sing-box
         log_verbose "Set executable permissions on /usr/local/bin/sing-box"
+        if ! /usr/local/bin/sing-box version >/dev/null 2>&1; then
+            warn "下载的二进制无法执行(glibc/musl不兼容)，回退到apk安装 / Downloaded binary cannot execute (glibc/musl mismatch); fallback to apk"
+            rm -f /usr/local/bin/sing-box
+            if [[ "$OS" == "alpine" ]]; then
+                apk add --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community sing-box >> "$LOG_FILE" 2>&1 || {
+                    task_fail; error "通过apk安装sing-box失败 / Failed to install sing-box via apk"; exit 1;
+                }
+            else
+                task_fail; error "下载的sing-box二进制文件无法执行 / Downloaded sing-box binary cannot execute"; exit 1;
+            fi
+        fi
     else
         warn "从Release下载sing-box失败，回退到官方安装脚本 / Failed to download sing-box from Release; fallback to official installer"
         # Fallback to official sing-box installer
