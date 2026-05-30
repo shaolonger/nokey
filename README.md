@@ -31,13 +31,14 @@
 10. 支持X25519
 11. 支持`--realm`模式安装Realm转发代理（用`--remote`指定目标地址，`--listen`可选）
 12. 支持`--realm-only`模式仅安装Realm（不安装Xray）
-13. 暂时想到这么多……
+13. 支持`--singbox`模式安装Sing-box代替Xray（使用Shadowsocks 2022-blake3-aes-128-gcm）
+14. 暂时想到这么多……
 
 > 已测试包括：ubuntu22/debian11/Rocky9.2/CentOS7.6/Fedora30/Alma9.2/alpine3.22，欢迎测试提issue或者报告成功结果
 
 ## 为什么从本仓库下载二进制
 
-`nokey.sh` 默认从本仓库 Releases 下载 `xray_amd64/xray_arm64/realm_amd64/realm_arm64/geoip.dat/geosite.dat`，而不是安装时去官方仓库临时拉取并解压 ZIP。这样做的目的：
+`nokey.sh` 默认从本仓库 Releases 下载 `xray_amd64/xray_arm64/realm_amd64/realm_arm64/sing-box_amd64/sing-box_arm64/geoip.dat/geosite.dat`，而不是安装时去官方仓库临时拉取并解压 ZIP。这样做的目的：
 
 1. 减少安装阶段的 CPU 和内存开销，提升低配机器成功率（尤其是 Alpine 小内存 Pod）。
 2. 降低外部依赖数量，让安装链路更短、更稳定。
@@ -97,14 +98,30 @@ nokey
 nokey --realm-only --remote 1.2.3.4:443
 ```
 
+### 场景四：安装Sing-box代替Xray（Shadowsocks 2022）
+```
+# 安装Sing-box（代替Xray）
+nokey --singbox
+
+# 安装Sing-box + Realm转发代理
+nokey --singbox --realm --remote 1.2.3.4:443
+
+# 指定端口和密码（--uuid被用作Shadowsocks密码）
+nokey --singbox --port 12345 --uuid "your-base64-key"
+
+# 仅预览安装流程
+nokey --singbox --dry-run
+```
+
 错误难免，请多指教，我希望能做出适合所有linux版本的，但是自己财力有限，欢迎大佬借我机器调试
 
 
 ## 卸载
 
 ```
-nokey --remove              # 卸载Xray (如果有Realm也一起卸载)
+nokey --remove              # 卸载Xray/Sing-box (如果有Realm也一起卸载)
 nokey --realm-only --remove  # 仅卸载Realm
+nokey --singbox --remove     # 卸载Sing-box (如果有Realm也一起卸载)
 ```
 
 
