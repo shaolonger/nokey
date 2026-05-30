@@ -8,9 +8,7 @@
 
 各大有名的一键脚本现在~~越来越臃肿，早就忘记了初心~~功能非常强大，选择非常多样
 
-自己把自己的手搓经验撮成一个真的一键脚本，分享一下
-
-这个魔改的一键脚本，比一键更激进，那我该叫什么？零键？其实还是要按回车键的，但是那些要按101个键的脚本都还叫一键脚本，我只好tiǎn着脸叫“零键”(NOKEY)了
+自己把自己的手搓经验撮成一个真的一键脚本，分享一下这个魔改的一键脚本，比一键更激进
 
 不需要域名，既适合会手搓的超级用户，也适合无需过多信息的纯小白，没有花里胡哨，快是我的强项，干就完了
 
@@ -36,49 +34,21 @@
 
 > 已测试包括：ubuntu22/debian11/Rocky9.2/CentOS7.6/Fedora30/Alma9.2/alpine3.22，欢迎测试提issue或者报告成功结果
 
-## 为什么从本仓库下载二进制
+## 食用方式
 
-`nokey.sh` 默认从本仓库 Releases 下载 `xray_amd64/xray_arm64/realm_amd64/realm_arm64/sing-box_amd64/sing-box_arm64/geoip.dat/geosite.dat`，而不是安装时去官方仓库临时拉取并解压 ZIP。这样做的目的：
-
-1. 减少安装阶段的 CPU 和内存开销，提升低配机器成功率（尤其是 Alpine 小内存 Pod）。
-2. 降低外部依赖数量，让安装链路更短、更稳定。
-3. 保证安装输入可控，避免每次现场执行复杂安装脚本。
-
-这些发布文件由 GitHub Action 自动同步生成，流程见：[`./.github/workflows/blank.yml`](.github/workflows/blank.yml)。
-
-# 食用方式
-
-> 首次使用后会添加一个alias `nokey`，下次直接执行`nokey`即可，比如`nokey --help`
->
- 
-1. 极速安装（在root下）
+### 极速安装（在root下）
 ```
-curl -fsSL -o /usr/local/bin/nokey https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh && chmod +x /usr/local/bin/nokey && nokey
+curl -fsSL -o /usr/local/bin/nokey https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh && chmod +x /usr/local/bin/nokey
 ```
 
-2. 查看帮助
+### 场景一：只安装Xray（默认，不带任何参数）
 ```
-nokey --help
-```
-
-3. 如果没有ipv4（纯v6的鸡），同时如果warp了ipv4的出口，此时要指定入口为v6，否则连不通（因为v4优先级比v6高）
-```
-nokey --netstack=6
+nokey
 ```
 
-4. 强制更新xray 和 geodata
+### 场景二：安装Xray + Realm（同时安装两者）
 ```
-nokey --force
-```
-
-5. 仅预览安装流程（不修改系统）
-```
-nokey --dry-run
-```
-
-### 场景一：安装Xray + Realm（同时安装两者）
-```
-# 安装Xray和Realm，把本地443转发到1.2.3.4:443
+# 安装Xray和Realm，把443转发到1.2.3.4:443
 nokey --realm --remote 1.2.3.4:443
 
 # 指定Realm监听地址
@@ -86,11 +56,6 @@ nokey --realm --remote 1.2.3.4:443 --listen 0.0.0.0:8080
 
 # Realm走IPv6
 nokey --netstack=6 --realm --remote [2001:db8::1]:443
-```
-
-### 场景二：只安装Xray（默认，不带任何参数）
-```
-nokey
 ```
 
 ### 场景三：只安装Realm转发代理（不安装Xray）
@@ -116,6 +81,27 @@ nokey --singbox --domain www.example.com
 nokey --singbox --dry-run
 ```
 
+### 其他 
+1. 查看帮助
+```
+nokey --help
+```
+
+2. 如果没有ipv4（纯v6的鸡），同时如果warp了ipv4的出口，此时要指定入口为v6，否则连不通（因为v4优先级比v6高）
+```
+nokey --netstack=6
+```
+
+3. 强制更新xray 和 geodata
+```
+nokey --force
+```
+
+4. 仅预览安装流程（不修改系统）
+```
+nokey --dry-run
+```
+
 错误难免，请多指教，我希望能做出适合所有linux版本的，但是自己财力有限，欢迎大佬借我机器调试
 
 
@@ -127,6 +113,16 @@ nokey --realm-only --remove  # 仅卸载Realm
 nokey --singbox --remove     # 卸载Sing-box (如果有Realm也一起卸载)
 ```
 
+
+## 为什么从本仓库下载二进制
+
+`nokey.sh` 默认从本仓库 Releases 下载 `xray_amd64/xray_arm64/realm_amd64/realm_arm64/sing-box_amd64/sing-box_arm64/geoip.dat/geosite.dat`，而不是安装时去官方仓库临时拉取并解压 ZIP。这样做的目的：
+
+1. 减少安装阶段的 CPU 和内存开销，提升低配机器成功率（尤其是 Alpine 小内存 Pod）。
+2. 降低外部依赖数量，让安装链路更短、更稳定。
+3. 保证安装输入可控，避免每次现场执行复杂安装脚本。
+
+这些发布文件由 GitHub Action 自动同步生成，流程见：[`./.github/workflows/blank.yml`](.github/workflows/blank.yml)。
 
 
 _感谢 [crazypeace](https://github.com/crazypeace/)_
