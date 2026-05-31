@@ -1149,6 +1149,7 @@ install_singbox() {
 }
 EOF
     
+    chmod 600 "$config_path"
     # Validate configuration if sing-box is available
     if command -v sing-box >/dev/null 2>&1; then
         if sing-box check -c "$config_path" >/dev/null 2>&1; then
@@ -1703,6 +1704,7 @@ EOF
         error "已删除不完整的配置文件，请检查权限、磁盘空间和$LOG_FILE获取详情 / Partial config file removed. Check permissions, disk space, and $LOG_FILE for details."
         exit 1
     fi
+    chmod 600 "$config_path"
     task_done
 
 log_info "--- ${config_path} ---"
@@ -1878,6 +1880,7 @@ REALMCFG
         error "写入Realm配置文件失败: $realm_config / Failed to write realm config to $realm_config."
         exit 1
     fi
+    chmod 600 "$realm_config"
 
     task_done_with_info "listen=${realm_listen}, remote=${realm_remote}"
 
