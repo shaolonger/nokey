@@ -1003,7 +1003,7 @@ install_singbox() {
     # For sing-box, we'll use default values similar to install-singbox.sh
     # Generate random port if not set
     if [[ -z $port ]]; then
-        port=$(shuf -i 10000-60000 -n 1 2>/dev/null || echo $((RANDOM % 50001 + 10000)))
+        port=$(shuf -i 10000-60000 -n 1 2>/dev/null || od -A n -t u2 -N 2 /dev/urandom | awk '{print ($1 % 50001) + 10000}')
         log_info "使用随机端口: $PORT"
     fi
     
@@ -1497,7 +1497,7 @@ initialize_variables() {
 
     task_start "寻找一个无辜的端口 / Find a Random Unused Port"
     if [[ -z $port ]]; then      
-      base=$((10000 + RANDOM % 50000))  # Start at a random offset
+      base=$(shuf -i 10000-60000 -n 1 2>/dev/null || od -A n -t u2 -N 2 /dev/urandom | awk '{print ($1 % 50001) + 10000}')  # Start at a random offset
       port_found=0
       for i in $(seq 0 1000); do
         port=$((base + i))
