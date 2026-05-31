@@ -1,6 +1,6 @@
 # 📦 [项目说明](README.md) | [Project](README.en.md) | [اطلاعات پروژه](README.fa.md)
 
-> Repository: https://github.com/livingfree2023/nokey
+> Repository: https://github.com/shaolonger/nokey
 
 Many popular "one-click" scripts nowadays have become ~~bloated~~ feature-rich, ~~lost their original purpose~~ very advanced.
 
@@ -52,7 +52,7 @@ These release assets are generated/synced by GitHub Actions. See: [`./.github/wo
 # 🧑‍🍳 How to Use (as root)
 
 ```bash
-curl -fsSL -o /usr/local/bin/nokey https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh && chmod +x /usr/local/bin/nokey && nokey
+curl -fsSL -o /usr/local/bin/nokey https://raw.githubusercontent.com/shaolonger/nokey/refs/heads/main/nokey.sh && chmod +x /usr/local/bin/nokey && nokey
 ```
 
 ---

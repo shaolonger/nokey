@@ -8,7 +8,7 @@
 **问题描述：**
 脚本通过 `add_alias_if_missing` 函数在用户的 `.bashrc`、`.zshrc` 等 shell 配置文件中写入了以下别名：
 ```bash
-alias nokey="bash <(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)"
+alias nokey="bash <(curl -fsSL https://raw.githubusercontent.com/shaolonger/nokey/refs/heads/main/nokey.sh)"
 ```
 **安全隐患：**
 - 每次用户在终端中输入 `nokey` 时，都会直接从 GitHub `main` 分支实时拉取并使用 `bash` 执行。

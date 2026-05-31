@@ -6,23 +6,23 @@ readonly SCRIPT_VERSION="2026.11"
 readonly LOG_FILE="nokey.log"
 readonly URL_FILE="nokey.url"
 readonly DEFAULT_DOMAIN="www.amd.com"
-readonly GITHUB_URL="https://github.com/livingfree2023/nokey"
-readonly GITHUB_CMD="bash <(curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh)"
+readonly GITHUB_URL="https://github.com/shaolonger/nokey"
+readonly GITHUB_CMD="bash <(curl -fsSL https://raw.githubusercontent.com/shaolonger/nokey/refs/heads/main/nokey.sh)"
 readonly SERVICE_NAME="xray.service"
 readonly SERVICE_NAME_ALPINE="xray"
-readonly GITHUB_RELEASE_BASE_URL="https://github.com/livingfree2023/nokey/releases/latest/download"
-readonly GITHUB_XRAY_RC_URL="https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/xray.rc"
-readonly GITHUB_XRAY_SERVICE_URL="https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/xray.service"
-readonly GITHUB_REALM_RC_URL="https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/realm.rc"
-readonly GITHUB_REALM_SERVICE_URL="https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/realm.service"
+readonly GITHUB_RELEASE_BASE_URL="https://github.com/shaolonger/nokey/releases/latest/download"
+readonly GITHUB_XRAY_RC_URL="https://raw.githubusercontent.com/shaolonger/nokey/refs/heads/main/xray.rc"
+readonly GITHUB_XRAY_SERVICE_URL="https://raw.githubusercontent.com/shaolonger/nokey/refs/heads/main/xray.service"
+readonly GITHUB_REALM_RC_URL="https://raw.githubusercontent.com/shaolonger/nokey/refs/heads/main/realm.rc"
+readonly GITHUB_REALM_SERVICE_URL="https://raw.githubusercontent.com/shaolonger/nokey/refs/heads/main/realm.service"
 readonly REALM_SERVICE_NAME="realm.service"
 readonly REALM_SERVICE_NAME_ALPINE="realm"
 readonly REALM_CONFIG_DIR="/usr/local/etc/realm"
 # Sing-box constants
 readonly SINGBOX_SERVICE_NAME="sing-box.service"
 readonly SINGBOX_SERVICE_NAME_ALPINE="sing-box"
-readonly GITHUB_SINGBOX_SERVICE_URL="https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/sing-box.service"
-readonly GITHUB_SINGBOX_RC_URL="https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/sing-box.rc"
+readonly GITHUB_SINGBOX_SERVICE_URL="https://raw.githubusercontent.com/shaolonger/nokey/refs/heads/main/sing-box.service"
+readonly GITHUB_SINGBOX_RC_URL="https://raw.githubusercontent.com/shaolonger/nokey/refs/heads/main/sing-box.rc"
 readonly SINGBOX_CONFIG_DIR="/etc/sing-box"
 
 mldsa_enabled=0
@@ -204,7 +204,7 @@ sha256_file() {
 }
 
 fetch_release_sha256_map() {
-    local release_api_url="https://api.github.com/repos/livingfree2023/nokey/releases/latest"
+    local release_api_url="https://api.github.com/repos/shaolonger/nokey/releases/latest"
     local release_json=""
     local release_body=""
 
@@ -280,7 +280,7 @@ check_root() {
 
 
 # Define the alias line
-#alias_line="alias nokey='bash -c \"\$(curl -sL https://raw.githubusercontent.com/livingfree2023/xray-vless-reality-nokey/refs/heads/main/nokey.sh)\" @'"
+#alias_line="alias nokey='bash -c \"\$(curl -sL https://raw.githubusercontent.com/shaolonger/xray-vless-reality-nokey/refs/heads/main/nokey.sh)\" @'"
 alias_line="alias nokey=\"$GITHUB_CMD\""
 # Array of potential shell config files
 config_files=(
@@ -307,7 +307,7 @@ install_nokey_command() {
         cp -f "$0" /usr/local/bin/nokey
         chmod 755 /usr/local/bin/nokey
     else
-        curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh -o /usr/local/bin/nokey
+        curl -fsSL https://raw.githubusercontent.com/shaolonger/nokey/refs/heads/main/nokey.sh -o /usr/local/bin/nokey
         chmod 755 /usr/local/bin/nokey
     fi
     task_done
@@ -1424,7 +1424,7 @@ parse_args() {
         --update)
           task_start "更新nokey脚本 / Update nokey script"
           tmp_script="$(mktemp)"
-          if curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh -o "$tmp_script"; then
+          if curl -fsSL https://raw.githubusercontent.com/shaolonger/nokey/refs/heads/main/nokey.sh -o "$tmp_script"; then
               fetch_release_sha256_map >/dev/null 2>&1 || true
               if [[ -n "$REMOTE_SHA_NOKEY_SH" ]]; then
                   local_sha="$(sha256_file "$tmp_script" || true)"

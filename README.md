@@ -1,6 +1,6 @@
 # 📦 [项目说明](README.md) | [Project](README.en.md) | [اطلاعات پروژه](README.fa.md)
 
-> 项目地址: https://github.com/livingfree2023/nokey
+> 项目地址: https://github.com/shaolonger/nokey
 > 
 > 如果你只是想换个端口，换个uuid，或者买的新鸡急着去测youtube/speedtest，这个脚本可能非常适合你
 
@@ -38,7 +38,7 @@
 
 ### 极速安装（在root下）
 ```
-curl -fsSL -o /usr/local/bin/nokey https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh && chmod +x /usr/local/bin/nokey
+curl -fsSL -o /usr/local/bin/nokey https://raw.githubusercontent.com/shaolonger/nokey/refs/heads/main/nokey.sh && chmod +x /usr/local/bin/nokey
 ```
 
 ### 场景一：只安装Xray（默认，不带任何参数）

@@ -1,6 +1,6 @@
 # 📦 [项目说明](README.md) | [Project](README.en.md) | [اطلاعات پروژه](README.fa.md)
 
-> آدرس مخزن: https://github.com/livingfree2023/nokey
+> آدرس مخزن: https://github.com/shaolonger/nokey
 
 اسکریپت‌های معروف «با یک کلیک» این روزها بیشتر ~~سنگین و پیچیده~~ شده‌اند، پر از امکانات و ~~خیلی وقت است از هدف اصلی‌شان دور شده‌اند~~ بسیار پیشرفته هستند.
 
@@ -52,7 +52,7 @@
 # 🧑‍🍳 روش استفاده (با دسترسی root)
 
 ```bash
-curl -fsSL -o /usr/local/bin/nokey https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh && chmod +x /usr/local/bin/nokey && nokey
+curl -fsSL -o /usr/local/bin/nokey https://raw.githubusercontent.com/shaolonger/nokey/refs/heads/main/nokey.sh && chmod +x /usr/local/bin/nokey && nokey
 ```
 
 ---
