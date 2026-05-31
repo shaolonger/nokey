@@ -229,8 +229,9 @@ fetch_release_sha256_map() {
     REMOTE_SHA_REALM_MUSL_ARM64="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-realm_musl_arm64:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
     REMOTE_SHA_SINGBOX_AMD64="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-sing-box_amd64:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
     REMOTE_SHA_SINGBOX_ARM64="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-sing-box_arm64:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
+    REMOTE_SHA_NOKEY_SH="$(printf '%s\n' "$release_body" | sed -nE 's/^SHA256-nokey.sh:[[:space:]]*([0-9a-fA-F]{64})$/\1/p' | head -n1)"
 
-    [[ -n "$REMOTE_SHA_XRAY_AMD64" || -n "$REMOTE_SHA_XRAY_ARM64" || -n "$REMOTE_SHA_GEOIP" || -n "$REMOTE_SHA_GEOSITE" || -n "$REMOTE_SHA_REALM_AMD64" || -n "$REMOTE_SHA_REALM_ARM64" || -n "$REMOTE_SHA_REALM_MUSL_AMD64" || -n "$REMOTE_SHA_REALM_MUSL_ARM64" || -n "$REMOTE_SHA_SINGBOX_AMD64" || -n "$REMOTE_SHA_SINGBOX_ARM64" ]]
+    [[ -n "$REMOTE_SHA_XRAY_AMD64" || -n "$REMOTE_SHA_XRAY_ARM64" || -n "$REMOTE_SHA_GEOIP" || -n "$REMOTE_SHA_GEOSITE" || -n "$REMOTE_SHA_REALM_AMD64" || -n "$REMOTE_SHA_REALM_ARM64" || -n "$REMOTE_SHA_REALM_MUSL_AMD64" || -n "$REMOTE_SHA_REALM_MUSL_ARM64" || -n "$REMOTE_SHA_SINGBOX_AMD64" || -n "$REMOTE_SHA_SINGBOX_ARM64" || -n "$REMOTE_SHA_NOKEY_SH" ]]
 }
 
 download_if_sha_differs() {
@@ -277,18 +278,26 @@ config_files=(
     "$HOME/.config/fish/config.fish"
 )
 
-# Function to add alias to a file if not already present
-add_alias_if_missing() {
-    task_start "添加nokey别名 / Add nokey alias to env"
+# Function to install the script to /usr/local/bin
+install_nokey_command() {
+    task_start "安装nokey命令 / Install nokey command"
     for file in "${config_files[@]}"; do
       if [ -f "$file" ]; then
-          if ! grep -Fxq "$alias_line" "$file"; then
-              echo "$alias_line" >> "$file"
+          if grep -Fxq "$alias_line" "$file"; then
+              sed -i.bak "/$(echo "$alias_line" | sed 's/[\/&]/\\&/g')/d" "$file"
           fi
       fi
     done
-    task_done
 
+    mkdir -p /usr/local/bin
+    if [[ -f "$0" ]]; then
+        cp -f "$0" /usr/local/bin/nokey
+        chmod 755 /usr/local/bin/nokey
+    else
+        curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh -o /usr/local/bin/nokey
+        chmod 755 /usr/local/bin/nokey
+    fi
+    task_done
 }
 
 # Function to remove alias from files
@@ -1395,6 +1404,37 @@ parse_args() {
           info "卸载完成 / Uninstallation complete ... [${green}OK${none}]"
           exit 0
           ;;
+        --update)
+          task_start "更新nokey脚本 / Update nokey script"
+          tmp_script="$(mktemp)"
+          if curl -fsSL https://raw.githubusercontent.com/livingfree2023/nokey/refs/heads/main/nokey.sh -o "$tmp_script"; then
+              fetch_release_sha256_map >/dev/null 2>&1 || true
+              if [[ -n "$REMOTE_SHA_NOKEY_SH" ]]; then
+                  local_sha="$(sha256_file "$tmp_script" || true)"
+                  if [[ -n "$local_sha" && "$local_sha" == "$REMOTE_SHA_NOKEY_SH" ]]; then
+                      mv -f "$tmp_script" /usr/local/bin/nokey
+                      chmod 755 /usr/local/bin/nokey
+                      task_done_with_info "更新成功 / Update successful"
+                      exit 0
+                  else
+                      task_fail
+                      error "哈希校验失败 / Hash verification failed!"
+                      rm -f "$tmp_script"
+                      exit 1
+                  fi
+              else
+                  task_fail
+                  error "无法从Release获取nokey.sh哈希，出于安全考虑拒绝更新 / No hash found in Release, update refused for security."
+                  rm -f "$tmp_script"
+                  exit 1
+              fi
+          else
+              task_fail
+              error "下载更新失败 / Failed to download update."
+              rm -f "$tmp_script"
+              exit 1
+          fi
+          ;;
         --dry-run)
           dry_run=1
           ;;
@@ -1895,6 +1935,7 @@ show_help() {
    echo "  --singbox-only    仅安装Sing-box (不安装Xray, 使用VLESS Reality Vision) / Install Sing-box only (without Xray, uses VLESS Reality Vision)"
   echo "  --remote=ADDRESS   设置Realm远程地址 (必填, 格式 host:port) / Set Realm remote address (required, format host:port)"
   echo "  --listen=ADDRESS   设置Realm监听地址 (可选, 默认派生自远程端口) / Set Realm listen address (optional, defaults to remote port on any address)"
+  echo "  --update           更新nokey脚本 (需哈希校验) / Update nokey script (requires hash verification)"
   echo "  --remove           卸载Xray (和已安装的Realm) 与NoKey / Uninstall Xray (and Realm if installed) and NoKey"
   echo "  --dry-run          仅预览安装动作，不写入系统 / Preview actions only"
   echo "  --help             显示此帮助信息 / Show this help message"
@@ -2288,7 +2329,7 @@ main() {
             initialize_ip_from_netstack
             install_singbox
             enable_bbr
-            add_alias_if_missing
+            install_nokey_command
         fi
     else
         # Default xray mode
@@ -2296,7 +2337,7 @@ main() {
             install_xray
             configure_xray
             enable_bbr
-            add_alias_if_missing
+            install_nokey_command
         fi
     fi
 
