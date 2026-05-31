@@ -241,7 +241,12 @@ download_if_sha_differs() {
     local label="$4"
     local local_sha=""
 
-    if [[ -n "$remote_sha" && -f "$target_path" ]]; then
+    if [[ -z "$remote_sha" ]]; then
+        error "出于安全考虑，拒绝在未提供哈希校验和的情况下下载 ${label} / Security enforced: Refusing to download ${label} without hash verification."
+        return 1
+    fi
+
+    if [[ -f "$target_path" ]]; then
         local_sha="$(sha256_file "$target_path" || true)"
         if [[ -n "$local_sha" && "$local_sha" == "$remote_sha" ]]; then
             info "跳过下载，${label} 已是最新 / Skip download: ${label} is up to date (sha256 matched)"
@@ -252,6 +257,13 @@ download_if_sha_differs() {
 
     log_verbose "Downloading: ${download_url} -> ${target_path}"
     curl -fSL "$download_url" -o "$target_path" >> "$LOG_FILE" 2>&1 || return 1
+    
+    local downloaded_sha="$(sha256_file "$target_path" || true)"
+    if [[ "$downloaded_sha" != "$remote_sha" ]]; then
+        error "下载的 ${label} 哈希校验失败 / Downloaded ${label} failed hash verification."
+        rm -f "$target_path"
+        return 1
+    fi
     return 0
 }
 
@@ -868,8 +880,9 @@ install_xray() {
         remote_sha_geosite="$REMOTE_SHA_GEOSITE"
         log_verbose "Fetched release checksums successfully for comparison"
     else
-        warn "获取Release校验和失败，回退到直接下载文件 / Failed to fetch release checksums; fallback to downloading files directly."
-        log_verbose "Failed to fetch/parse release checksum metadata from latest release"
+        task_fail
+        error "获取Release校验和失败，出于安全考虑终止安装 / Failed to fetch release checksums, aborting for security."
+        exit 1
     fi
 
     download_if_sha_differs "/usr/local/bin/xray" "$remote_sha_xray" "${GITHUB_RELEASE_BASE_URL}/${arch_binary_name}" "${arch_binary_name}" || { task_fail; error "下载${arch_binary_name}失败 / Failed to download ${arch_binary_name}"; exit 1; }
@@ -1028,7 +1041,9 @@ install_singbox() {
         fi
         log_verbose "Fetched release checksums successfully for comparison"
     else
-        warn "获取Release校验和失败，回退到直接下载文件 / Failed to fetch release checksums; fallback to downloading files directly."
+        task_fail
+        error "获取Release校验和失败，出于安全考虑终止安装 / Failed to fetch release checksums, aborting for security."
+        exit 1
     fi
     
     local download_url="${GITHUB_RELEASE_BASE_URL}/${arch_binary_name}"
@@ -1772,7 +1787,9 @@ install_realm() {
             remote_sha="$REMOTE_SHA_REALM_ARM64"
         fi
     else
-        warn "获取Release校验和失败，回退到直接下载文件 / Failed to fetch release checksums; fallback to downloading files directly."
+        task_fail
+        error "获取Release校验和失败，出于安全考虑终止安装 / Failed to fetch release checksums, aborting for security."
+        exit 1
     fi
 
     download_if_sha_differs "/usr/local/bin/realm" "$remote_sha" "${GITHUB_RELEASE_BASE_URL}/${arch_binary_name}" "${arch_binary_name}" || { task_fail; error "下载${arch_binary_name}失败 / Failed to download ${arch_binary_name}"; exit 1; }
