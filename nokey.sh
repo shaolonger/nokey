@@ -911,9 +911,9 @@ install_xray() {
         curl -fSL "${GITHUB_XRAY_SERVICE_URL}" -o "${xray_service_tmp}" >> "$LOG_FILE" 2>&1 || { task_fail; error "下载xray.service失败 / Failed to download xray.service"; exit 1; }
         # shellcheck disable=SC2016
         sed -e 's/\$INSTALL_USER/nobody/g' \
-            -e '/\${temp_CapabilityBoundingSet}/d' \
-            -e '/\${temp_AmbientCapabilities}/d' \
-            -e '/\${temp_NoNewPrivileges}/d' \
+            -e 's/\${temp_CapabilityBoundingSet}/CapabilityBoundingSet=CAP_NET_BIND_SERVICE/g' \
+            -e 's/\${temp_AmbientCapabilities}/AmbientCapabilities=CAP_NET_BIND_SERVICE/g' \
+            -e 's/\${temp_NoNewPrivileges}/NoNewPrivileges=true/g' \
             "${xray_service_tmp}" > /etc/systemd/system/"$SERVICE_NAME" || { task_fail; error "写入/etc/systemd/system/$SERVICE_NAME失败 / Failed to write /etc/systemd/system/$SERVICE_NAME"; exit 1; }
         rm -f "${xray_service_tmp}" >> "$LOG_FILE" 2>&1
         log_verbose "Installed systemd service file from xray.service"
