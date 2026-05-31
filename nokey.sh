@@ -60,6 +60,7 @@ readonly none='\e[0m'
 init_output_files() {
     : > "$LOG_FILE"
     : > "$URL_FILE"
+    chmod 600 "$LOG_FILE" "$URL_FILE"
 }
 
 # Helper functions
@@ -1708,7 +1709,7 @@ EOF
     task_done
 
 log_info "--- ${config_path} ---"
-    cat "$config_path" | tee -a "$LOG_FILE"
+    cat "$config_path"
 }
 
 restart_xray_service() {
@@ -1885,7 +1886,7 @@ REALMCFG
     task_done_with_info "listen=${realm_listen}, remote=${realm_remote}"
 
 log_info "--- ${realm_config} ---"
-    cat "$realm_config" | tee -a "$LOG_FILE"
+    cat "$realm_config"
 }
 
 restart_realm_service() {
@@ -2208,7 +2209,7 @@ generate_share_links() {
         local link
         link="vless://${uuid}@${server_ip}:${port}?flow=xtls-rprx-vision&encryption=none&type=tcp&security=reality&sni=${domain}&fp=${fingerprint}&pbk=${public_key}&sid=${shortid}#${current_hostname}"
         info "分享链接 / Share Link:"
-        echo -e "${magenta}${link}${none}" | tee -a "$LOG_FILE" | tee -a "$URL_FILE"
+        echo -e "${magenta}${link}${none}"
         return
     fi
 
@@ -2222,11 +2223,11 @@ generate_share_links() {
     
     if [[ $mldsa_enabled == 1 ]]; then
       vless_reality_mldsa_url="vless://${uuid}@${ip}:${port}?flow=xtls-rprx-vision&encryption=none&type=tcp&security=reality&sni=${domain}&fp=${fingerprint}&pbk=${public_key}&sid=${shortid}&pqv=${mldsa65Verify}&#${current_hostname}"
-      echo -e "${magenta}${vless_reality_mldsa_url}${none}"  | tee -a "$LOG_FILE" | tee -a "$URL_FILE"
+      echo -e "${magenta}${vless_reality_mldsa_url}${none}"
       info "不含mldsa / Without mldsa:"
-      echo -e "${magenta}${vless_reality_url_short}${none}"  | tee -a "$LOG_FILE" | tee -a "$URL_FILE"
+      echo -e "${magenta}${vless_reality_url_short}${none}"
     else
-      echo -e "${magenta}${vless_reality_url_short}${none}"  | tee -a "$LOG_FILE" | tee -a "$URL_FILE"
+      echo -e "${magenta}${vless_reality_url_short}${none}"
     fi
 }
 
@@ -2254,7 +2255,7 @@ generate_clash_config() {
 EOF
 )
         info "Clash.meta 配置 / Clash.meta config:"
-        echo -e "${cyan}${clash_config}${none}" | tee -a "$LOG_FILE" | tee -a "$URL_FILE"
+        echo -e "${cyan}${clash_config}${none}"
         return
     fi
 
@@ -2282,15 +2283,12 @@ EOF
 EOF
 )
     info "Clash.meta 配置 / Clash.meta config:"
-    echo -e "${cyan}${clash_meta_config}${none}" | tee -a "$LOG_FILE" | tee -a "$URL_FILE"
+    echo -e "${cyan}${clash_meta_config}${none}"
 }
 
 output_results() {
     # 指纹FingerPrint
     fingerprint="random"
-
-    # QR code tip → log only
-    log_info "二维码生成命令：安装qrencode后运行 / For QR code, install qrencode and run: qrencode -t UTF8 -r $URL_FILE"
 
     check_service_status
     
